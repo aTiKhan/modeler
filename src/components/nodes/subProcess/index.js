@@ -1,9 +1,10 @@
 import component from './subProcess';
 import SubProcessFormSelect from './SubProcessFormSelect';
-import idConfigSettings from '@/components/inspectors/idConfigSettings';
 import nameConfigSettings from '@/components/inspectors/nameConfigSettings';
+import { taskHeight, taskWidth } from '@/components/nodes/task/taskConfig';
+import advancedAccordionConfig from '@/components/inspectors/advancedAccordionConfig';
+import defaultNames from '@/components/nodes/task/defaultNames';
 
-export const taskHeight = 76;
 export const id = 'processmaker-modeler-call-activity';
 
 export default {
@@ -13,38 +14,41 @@ export default {
   control: false,
   category: 'BPMN',
   icon: require('@/assets/toolpanel/subProcess.svg'),
-  label: 'Sub Process',
+  label: defaultNames[id],
   definition(moddle, $t) {
     return moddle.create('bpmn:CallActivity', {
-      name: $t('New Sub Process'),
+      name: $t(defaultNames[id]),
       calledElement: '',
+      config: '{}',
     });
   },
   diagram(moddle) {
     return moddle.create('bpmndi:BPMNShape', {
       bounds: moddle.create('dc:Bounds', {
         height: taskHeight,
-        width: 116,
+        width: taskWidth,
       }),
     });
   },
   inspectorHandler(value, node, setNodeProp) {
-    for (const key in value) {
-      if (node.definition[key] === value[key]) {
-        continue;
-      }
 
-      if (key === 'callActivityExpression') {
-        this.inspectorHandler(value[key], node, setNodeProp);
-        continue;
-      }
+    setNodeProp(node, 'id', value.id);
+    setNodeProp(node, 'name', value.name);
 
-      setNodeProp(node, key, value[key]);
+    const currentConfig = JSON.parse(value.config);
+
+    setNodeProp(node, 'calledElement', currentConfig.calledElement);
+
+    if (currentConfig.name !== value.name) {
+      currentConfig.name = value.name;
     }
+
+    setNodeProp(node, 'config', JSON.stringify(currentConfig));
+
   },
   inspectorConfig: [
     {
-      name: 'Sub Process',
+      name: defaultNames[id],
       items: [
         {
           component: 'FormAccordion',
@@ -63,29 +67,12 @@ export default {
             {
               component: SubProcessFormSelect,
               config: {
-                label: 'Process',
-                name: 'calledElement',
-                helper: 'Select which Process this element calls',
+                name: 'config',
               },
             },
           ],
         },
-        {
-          component: 'FormAccordion',
-          container: true,
-          config: {
-            initiallyOpen: false,
-            label: 'Advanced',
-            icon: 'cogs',
-            name: 'inspector-accordion',
-          },
-          items: [
-            {
-              component: 'FormInput',
-              config: idConfigSettings,
-            },
-          ],
-        },
+        advancedAccordionConfig,
       ],
     },
   ],

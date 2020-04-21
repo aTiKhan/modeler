@@ -6,10 +6,12 @@
       :is-rendering="isRendering"
       :paper-manager="paperManager"
       :breadcrumb-data="breadcrumbData"
+      :panelsCompressed="panelsCompressed"
       @load-xml="loadXML"
-      @toggle-panels-compressed="panelsCompressed = $event"
+      @toggle-panels-compressed="panelsCompressed = !panelsCompressed"
       @toggle-mini-map-open="miniMapOpen = $event"
-      @saveBpmn="$emit('saveBpmn')"
+      @saveBpmn="saveBpmn"
+      @save-state="pushToUndoStack"
     />
     <b-row class="modeler h-100">
       <b-tooltip
@@ -51,12 +53,13 @@
         :style="{ height: parentHeight }"
         :nodeRegistry="nodeRegistry"
         :moddle="moddle"
+        :definitions="definitions"
         :processNode="processNode"
         @save-state="pushToUndoStack"
         class="inspector h-100"
         :parent-height="parentHeight"
         :canvas-drag-position="canvasDragPosition"
-        :compressed="panelsCompressed"
+        :compressed="panelsCompressed && noElementsSelected"
       />
 
       <component
@@ -67,8 +70,9 @@
         :paper="paper"
         :node="node"
         :id="node.id"
-        :highlighted="highlightedNode === node"
+        :highlighted="highlightedNodes.includes(node)"
         :has-error="invalidNodes.includes(node.id)"
+        :border-outline="borderOutline(node.id)"
         :collaboration="collaboration"
         :process-node="processNode"
         :processes="processes"
@@ -79,17 +83,20 @@
         :isRendering="isRendering"
         :paperManager="paperManager"
         :auto-validate="autoValidate"
+        :is-active="node === activeNode"
         @add-node="addNode"
         @remove-node="removeNode"
         @set-cursor="cursor = $event"
         @set-pool-target="poolTarget = $event"
-        @click="highlightNode(node)"
+        @click="highlightNode(node, $event)"
         @unset-pools="unsetPools"
         @set-pools="setPools"
         @save-state="pushToUndoStack"
         @set-shape-stacking="setShapeStacking"
         @setTooltip="tooltipTarget = $event"
         @replace-node="replaceNode"
+        @copy-element="copyElement"
+        @default-flow="toggleDefaultFlow"
       />
     </b-row>
   </span>
@@ -113,7 +120,6 @@ import Process from '../inspectors/process';
 import runningInCypressTest from '@/runningInCypressTest';
 import getValidationProperties from '@/targetValidationUtils';
 import MiniPaper from '@/components/miniPaper/MiniPaper';
-
 import { id as laneId } from '../nodes/poolLane';
 import { id as sequenceFlowId } from '../nodes/sequenceFlow';
 import { id as associationId } from '../nodes/association';
@@ -125,11 +131,15 @@ import registerInspectorExtension from '@/components/InspectorExtensionManager';
 import initAnchor from '@/mixins/linkManager.js';
 import ensureShapeIsNotCovered from '@/components/shapeStackUtils';
 import ToolBar from '@/components/toolbar/ToolBar';
-import moveShapeByKeypress from '@/components/modeler/moveWithArrowKeys';
 import Node from '@/components/nodes/node';
 import { addNodeToProcess } from '@/components/nodeManager';
-
-const version = '1.0';
+import moveShapeByKeypress from '@/components/modeler/moveWithArrowKeys';
+import setUpSelectionBox from '@/components/modeler/setUpSelectionBox';
+import TimerEventNode from '@/components/nodes/timerEventNode';
+import focusNameInputAndHighlightLabel from '@/components/modeler/focusNameInputAndHighlightLabel';
+import XMLManager from '@/components/modeler/XMLManager';
+import { removeOutgoingAndIncomingRefsToFlow } from '@/components/crown/utils';
+import { getAssociationFlowsForNode, keepOriginalName } from '@/components/modeler/modelerUtils';
 
 export default {
   components: {
@@ -137,6 +147,15 @@ export default {
     controls,
     InspectorPanel,
     MiniPaper,
+  },
+  props: {
+    owner: Object,
+    decorations: {
+      type: Object,
+      default() {
+        return {};
+      },
+    },
   },
   data() {
     return {
@@ -177,16 +196,25 @@ export default {
       allWarnings: [],
       nodeTypes: [],
       breadcrumbData: [],
+      activeNode: null,
+      xmlManager: null,
+      previouslyStackedShape: null,
     };
   },
   watch: {
     isRendering() {
+      const loadingMessage = 'Loading process, please be patient.';
+
       if (this.isRendering) {
+        window.ProcessMaker.alert(loadingMessage, 'warning');
         document.body.style.cursor = 'wait !important';
         this.cursor = 'wait';
         return;
       }
 
+      window.ProcessMaker.navbar.alerts = window.ProcessMaker.navbar.alerts.filter(alert => {
+        return alert.alertText !== loadingMessage;
+      });
       document.body.style.cursor = 'auto';
       this.cursor = null;
     },
@@ -201,6 +229,9 @@ export default {
     },
   },
   computed: {
+    noElementsSelected() {
+      return this.highlightedNodes.filter(node => !node.isType('processmaker-modeler-process')).length === 0;
+    },
     tooltipTitle() {
       if (this.tooltipTarget) {
         return this.tooltipTarget.$el.data('title');
@@ -212,13 +243,44 @@ export default {
     currentXML() {
       return undoRedoStore.getters.currentState;
     },
-    highlightedNode: () => store.getters.highlightedNode,
+    /* connectors expect a highlightedNode property */
+    highlightedNode: () => store.getters.highlightedNodes[0],
+    highlightedNodes: () => store.getters.highlightedNodes,
     invalidNodes() {
       return Object.entries(this.validationErrors)
         .flatMap(([, errors]) => errors.map(error => error.id));
     },
   },
   methods: {
+    toggleDefaultFlow(flow) {
+      const source = flow.definition.sourceRef;
+      if (source.default && source.default.id === flow.id) {
+        flow = null;
+      }
+      source.set('default', flow);
+    },
+    copyElement(node, copyCount) {
+      const clonedNode = node.clone(this.nodeRegistry, this.moddle, this.$t);
+      const yOffset = (node.diagram.bounds.height + 30) * copyCount;
+
+      clonedNode.diagram.bounds.y += yOffset;
+      this.addNode(clonedNode);
+    },
+    async saveBpmn() {
+      const svg = document.querySelector('.mini-paper svg');
+      const css = 'text { font-family: sans-serif; }';
+      const style = document.createElement('style');
+      style.appendChild(document.createTextNode(css));
+
+      svg.appendChild(style);
+      const xml = await this.getXmlFromDiagram();
+      const svgString = (new XMLSerializer()).serializeToString(svg);
+
+      this.$emit('saveBpmn', { xml, svg: svgString });
+    },
+    borderOutline(nodeId) {
+      return this.decorations.borderOutline && this.decorations.borderOutline[nodeId];
+    },
     addWarning(warning) {
       this.allWarnings.push(warning);
       this.$emit('warnings', this.allWarnings);
@@ -311,8 +373,22 @@ export default {
       this.plane.set('bpmnElement', this.processNode.definition);
       this.collaboration = null;
     },
-    highlightNode(node) {
+    highlightNode(node, event) {
+      if (event && event.shiftKey) {
+        store.commit('addToHighlightedNodes', [node]);
+        return;
+      }
+
       store.commit('highlightNode', node);
+    },
+    blurFocusedScreenBuilderElement() {
+      const elementsToBlur = ['INPUT', 'SELECT'];
+      if (elementsToBlur.includes(document.activeElement && document.activeElement.tagName)) {
+        document.activeElement.blur();
+      }
+    },
+    registerStatusBar(component) {
+      this.owner.validationBar.push(component);
     },
     /**
      * Register a mixin into a node component.
@@ -447,6 +523,10 @@ export default {
       this.processes = this.getProcesses();
       this.plane = this.getPlane();
       this.planeElements = this.getPlaneElements();
+
+      this.validatePlaneElements();
+      this.cleanPlaneElements();
+
       this.processNode = new Node(
         'processmaker-modeler-process',
         this.processes[0],
@@ -454,13 +534,23 @@ export default {
       );
     },
     removeUnsupportedElementAttributes(definition) {
-      const unsupportedElements = ['documentation', 'extensionElements'];
+      const unsupportedElements = ['extensionElements'];
 
       unsupportedElements.filter(name => definition.get(name))
         .forEach(name => definition.set(name, undefined));
     },
-    getParsers(bpmnType) {
-      return this.parsers[bpmnType];
+    getCustomParser(definition) {
+      const parsers = this.parsers[(definition.$type)];
+
+      if (!parsers) {
+        return;
+      }
+
+      const customParser = parsers.custom.find(parser => parser(definition, this.moddle));
+      const implementationParser = parsers.implementation.find(parser => parser(definition, this.moddle));
+      const defaultParser = parsers.default.find(parser => parser(definition, this.moddle));
+
+      return customParser || implementationParser || defaultParser;
     },
     handleUnsupportedElement(bpmnType, flowElements, definition, artifacts, diagram) {
       this.addWarning({
@@ -488,21 +578,15 @@ export default {
     setNode(definition, flowElements, artifacts) {
       const diagram = this.planeElements.find(diagram => diagram.bpmnElement.id === definition.id);
       const bpmnType = definition.$type;
-      const parsers = this.getParsers(bpmnType);
+      const parser = this.getCustomParser(definition);
 
-      if (!parsers) {
+      if (!parser) {
         this.handleUnsupportedElement(bpmnType, flowElements, definition, artifacts, diagram);
-
         return;
       }
 
       this.removeUnsupportedElementAttributes(definition);
-
-      const customParser = parsers.custom.find(parser => parser(definition, this.moddle));
-      const implementationParser = parsers.implementation.find(parser => parser(definition, this.moddle));
-      const defaultParser = parsers.default.find(parser => parser(definition, this.moddle));
-
-      const type = (customParser || implementationParser || defaultParser)(definition, this.moddle);
+      const type = parser(definition, this.moddle);
 
       const unnamedElements = ['bpmn:TextAnnotation', 'bpmn:Association'];
       const requireName = unnamedElements.indexOf(bpmnType) === -1;
@@ -510,7 +594,16 @@ export default {
         definition.set('name', '');
       }
 
-      store.commit('addNode', new Node(type, definition, diagram));
+      const node = this.createNode(type, definition, diagram);
+
+      store.commit('addNode', node);
+    },
+    createNode(type, definition, diagram) {
+      if (Node.isTimerType(type)) {
+        return new TimerEventNode(type, definition, diagram);
+      }
+
+      return new Node(type, definition, diagram);
     },
     hasSourceAndTarget(definition) {
       const hasSource = definition.sourceRef && this.parsers[definition.sourceRef.$type];
@@ -528,8 +621,6 @@ export default {
       await this.paperManager.performAtomicAction(async() => {
         await this.waitForCursorToChange();
         this.parse();
-        this.validatePlaneElements();
-        this.cleanPlaneElements();
         this.addPools();
         this.setUpDiagram();
       });
@@ -537,18 +628,12 @@ export default {
       this.isRendering = false;
       this.$emit('parsed');
     },
-    loadXML(xml = this.currentXML) {
-      this.moddle.fromXML(xml, (err, definitions) => {
-        if (err) {
-          return;
-        }
-        definitions.exporter = 'ProcessMaker Modeler';
-        definitions.exporterVersion = version;
-        this.definitions = definitions;
-        this.nodeIdGenerator = new NodeIdGenerator(definitions);
-        store.commit('clearNodes');
-        this.renderPaper();
-      });
+    async loadXML(xml = this.currentXML) {
+      this.definitions = await this.xmlManager.getDefinitionsFromXml(xml);
+      this.xmlManager.definitions = this.definitions;
+      this.nodeIdGenerator = new NodeIdGenerator(this.definitions);
+      store.commit('clearNodes');
+      this.renderPaper();
     },
     getBoundaryEvents(process) {
       return process.get('flowElements').filter(({ $type }) => $type === 'bpmn:BoundaryEvent');
@@ -560,15 +645,12 @@ export default {
       boundaryEvent.set('eventDefinitions', definition.get('eventDefinitions'));
       boundaryEvent.set('cancelActivity', definition.get('cancelActivity'));
       boundaryEvent.set('attachedToRef', definition.get('attachedToRef'));
+      boundaryEvent.set('color', definition.get('color'));
       boundaryEvent.$parent = definition.$parent;
       if (definition.get('outgoing').length > 0) {
         boundaryEvent.set('outgoing', definition.get('outgoing'));
       }
       return boundaryEvent;
-    },
-    replaceDefinition(definition, boundaryEvent, process) {
-      const definitionIndex = process.get('flowElements').indexOf(definition);
-      process.flowElements[definitionIndex] = boundaryEvent;
     },
     ensureCancelActivityIsAddedToBoundaryEvents(process) {
       this.getBoundaryEvents(process).forEach(definition => {
@@ -577,10 +659,18 @@ export default {
         this.replaceDefinition(definition, boundaryEvent, process);
       });
     },
+    replaceDefinition(definition, boundaryEvent, process) {
+      const definitionIndex = process.get('flowElements').indexOf(definition);
+      process.flowElements[definitionIndex] = boundaryEvent;
+      const boundaryEventDiagram = this.planeElements.find((diagram) => {
+        return diagram.bpmnElement === definition;
+      });
+      boundaryEventDiagram.bpmnElement = boundaryEvent;
+    },
     toXML(cb) {
       this.moddle.toXML(this.definitions, { format: true }, cb);
     },
-    handleDrop({ clientX, clientY, control }) {
+    async handleDrop({ clientX, clientY, control, nodeThatWillBeReplaced }) {
       this.validateDropTarget({ clientX, clientY, control });
 
       if (!this.allowDrop) {
@@ -588,20 +678,77 @@ export default {
       }
 
       const definition = this.nodeRegistry[control.type].definition(this.moddle, this.$t);
+
       const diagram = this.nodeRegistry[control.type].diagram(this.moddle);
 
       const { x, y } = this.paperManager.clientToGridPoint(clientX, clientY);
       diagram.bounds.x = x;
       diagram.bounds.y = y;
 
-      const node = new Node(control.type, definition, diagram);
+      const newNode = this.createNode(control.type, definition, diagram);
 
-      if (node.isBpmnType('bpmn:BoundaryEvent')) {
+      if (newNode.isBpmnType('bpmn:BoundaryEvent')) {
         this.setShapeCenterUnderCursor(diagram);
       }
 
-      this.highlightNode(node);
-      this.addNode(node);
+      this.highlightNode(newNode);
+      await this.addNode(newNode);
+
+      if (!nodeThatWillBeReplaced) {
+        return;
+      }
+
+      if (keepOriginalName(nodeThatWillBeReplaced)) {
+        definition.name = nodeThatWillBeReplaced.definition.name;
+      }
+
+      const forceNodeToRemount = definition => {
+        const shape = this.graph.getLinks().find(element => {
+          return element.component && element.component.node.definition === definition;
+        });
+        shape.component.node._modelerId += '_replaced';
+      };
+
+      const incoming = nodeThatWillBeReplaced.definition.get('incoming');
+      const outgoing = nodeThatWillBeReplaced.definition.get('outgoing');
+
+      definition.get('incoming').push(...incoming);
+      definition.get('outgoing').push(...outgoing);
+
+      outgoing.forEach(ref => {
+        ref.set('sourceRef', newNode.definition);
+        forceNodeToRemount(ref);
+      });
+
+      incoming.forEach(ref => {
+        ref.set('targetRef', newNode.definition);
+        forceNodeToRemount(ref);
+      });
+
+      const associationFlows = getAssociationFlowsForNode(nodeThatWillBeReplaced, this.processes);
+      associationFlows.forEach(flow => {
+        flow.set('targetRef', newNode.definition);
+        forceNodeToRemount(flow);
+      });
+
+      if (this.collaboration) {
+        const messageFlows = this.collaboration.get('messageFlows');
+        messageFlows
+          .filter(flow => flow.sourceRef === nodeThatWillBeReplaced.definition)
+          .forEach(flow => {
+            flow.set('sourceRef', newNode.definition);
+            forceNodeToRemount(flow);
+          });
+
+        messageFlows
+          .filter(flow => flow.targetRef === nodeThatWillBeReplaced.definition)
+          .forEach(flow => {
+            flow.set('targetRef', newNode.definition);
+            forceNodeToRemount(flow);
+          });
+      }
+
+      return newNode;
     },
     setShapeCenterUnderCursor(diagram) {
       diagram.bounds.x -= (diagram.bounds.width / 2);
@@ -615,27 +762,47 @@ export default {
       node.setIds(this.nodeIdGenerator);
 
       this.planeElements.push(node.diagram);
-
       store.commit('addNode', node);
+      this.poolTarget = null;
 
-      if (![sequenceFlowId, laneId, associationId, messageFlowId].includes(node.type)) {
-        setTimeout(() => this.pushToUndoStack());
+      if ([sequenceFlowId, laneId, associationId, messageFlowId].includes(node.type)) {
+        return;
       }
 
-      this.poolTarget = null;
+      return new Promise(resolve => {
+        setTimeout(() => {
+          this.pushToUndoStack();
+          resolve();
+        });
+      });
     },
-    removeNode(node) {
+    async removeNode(node) {
+      removeOutgoingAndIncomingRefsToFlow(node);
+
       this.removeNodeFromLane(node);
       store.commit('removeNode', node);
       store.commit('highlightNode', this.processNode);
-      this.$nextTick(() => {
-        this.pushToUndoStack();
-      });
+      await this.$nextTick();
+      this.pushToUndoStack();
     },
     replaceNode({ node, typeToReplaceWith }) {
-      const { x: clientX, y: clientY } = this.paper.localToClientPoint(node.diagram.bounds);
-      this.removeNode(node);
-      this.handleDrop({ clientX, clientY, control: { type: typeToReplaceWith } });
+      this.performSingleUndoRedoTransaction(async() => {
+        const { x: clientX, y: clientY } = this.paper.localToClientPoint(node.diagram.bounds);
+        const newNode = await this.handleDrop({
+          clientX, clientY,
+          control: { type: typeToReplaceWith },
+          nodeThatWillBeReplaced: node,
+        });
+
+        await this.removeNode(node);
+        this.highlightNode(newNode);
+      });
+    },
+    async performSingleUndoRedoTransaction(cb) {
+      undoRedoStore.commit('disableSavingState');
+      await cb();
+      undoRedoStore.commit('enableSavingState');
+      this.pushToUndoStack();
     },
     removeNodeFromLane(node) {
       const containingLane = node.pool && node.pool.component.laneSet &&
@@ -656,6 +823,18 @@ export default {
 
       this.paperManager.setPaperDimensions(clientWidth, clientHeight);
     },
+    keydownListener(event) {
+      const focusIsOutsideDiagram = !event.target.toString().toLowerCase().includes('body');
+      if (focusIsOutsideDiagram) {
+        return;
+      }
+
+      moveShapeByKeypress(
+        event.key,
+        store.getters.highlightedShapes,
+        this.pushToUndoStack,
+      );
+    },
     validateDropTarget({ clientX, clientY, control }) {
       const { allowDrop, poolTarget } = getValidationProperties(clientX, clientY, control, this.paperManager.paper, this.graph, this.collaboration, this.$refs['paper-container']);
       this.allowDrop = allowDrop;
@@ -665,6 +844,11 @@ export default {
       return shape.component != null;
     },
     setShapeStacking(shape) {
+      if (this.isRendering || (!shape.component.node.isType('processmaker-modeler-pool') && shape === this.previouslyStackedShape)) {
+        return;
+      }
+
+      this.previouslyStackedShape = shape;
       this.paperManager.performAtomicAction(() => ensureShapeIsNotCovered(shape, this.graph));
     },
   },
@@ -691,31 +875,30 @@ export default {
       registerInspectorExtension,
       registerBpmnExtension: this.registerBpmnExtension,
       registerNode: this.registerNode,
+      registerStatusBar: this.registerStatusBar,
     });
 
     this.moddle = new BpmnModdle(this.extensions);
-
     this.linter = new Linter(linterConfig);
+    this.xmlManager = new XMLManager(this.moddle);
+    this.$emit('set-xml-manager', this.xmlManager);
   },
   mounted() {
-    document.addEventListener('keydown', event => {
-      moveShapeByKeypress(
-        event.key,
-        store.getters.highlightedShape,
-        this.pushToUndoStack,
-      );
-    });
+    document.addEventListener('keydown', this.keydownListener);
 
     this.graph = new dia.Graph();
     store.commit('setGraph', this.graph);
     this.graph.set('interactiveFunc', cellView => {
       return {
         elementMove: cellView.model.get('elementMove'),
+        labelMove: false,
       };
     });
 
     this.paperManager = PaperManager.factory(this.$refs.paper, this.graph.get('interactiveFunc'), this.graph);
     this.paper = this.paperManager.paper;
+
+    this.paperManager.addEventHandler('cell:pointerdblclick', focusNameInputAndHighlightLabel);
 
     this.handleResize();
     window.addEventListener('resize', this.handleResize);
@@ -726,6 +909,8 @@ export default {
       store.commit('highlightNode', this.processNode);
     }, this);
 
+    this.paperManager.addEventHandler('element:pointerclick', this.blurFocusedScreenBuilderElement, this);
+
     this.paperManager.addEventHandler('blank:pointerdown', (event, x, y) => {
       const scale = this.paperManager.scale;
       this.canvasDragPosition = { x: x * scale.sx, y: y * scale.sy };
@@ -734,6 +919,7 @@ export default {
     this.paperManager.addEventHandler('cell:pointerup blank:pointerup', () => {
       this.canvasDragPosition = null;
       this.isGrabbing = false;
+      this.activeNode = null;
     }, this);
 
     this.$el.addEventListener('mousemove', event => {
@@ -752,19 +938,32 @@ export default {
       }
     });
 
-    this.paperManager.addEventHandler('cell:pointerdown', cellView => {
-      const shape = cellView.model;
+    this.paperManager.addEventHandler('cell:pointerclick', ({ model: shape }, event) => {
+      if (!this.isBpmnNode(shape)) {
+        return;
+      }
 
+      shape.component.$emit('click', event);
+    });
+
+    this.paperManager.addEventHandler('cell:pointerdown', ({ model: shape }) => {
       if (!this.isBpmnNode(shape)) {
         return;
       }
 
       this.setShapeStacking(shape);
-
-      shape.component.$emit('click');
+      this.activeNode = shape.component.node;
     });
 
     initAnchor();
+
+    let cursor;
+    const setCursor = () => {
+      cursor = this.cursor;
+      this.cursor = 'crosshair';
+    };
+    const resetCursor = () => this.cursor = cursor;
+    setUpSelectionBox(setCursor, resetCursor, this.paperManager, this.graph);
 
     /* Register custom nodes */
     window.ProcessMaker.EventBus.$emit('modeler-start', {

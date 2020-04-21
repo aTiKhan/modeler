@@ -49,7 +49,7 @@ import omit from 'lodash/omit';
 import get from 'lodash/get';
 import cloneDeep from 'lodash/cloneDeep';
 import Process from './process';
-import SequenceFlowFormSelect from './sequenceFlowFormSelect/SequenceFlowFormSelect.vue';
+import isString from 'lodash/isString';
 
 Vue.component('FormText', renderer.FormText);
 Vue.component('FormInput', FormInput);
@@ -63,7 +63,7 @@ Vue.component('VueFormRenderer', VueFormRenderer);
 Vue.component('FormMultiSelect', FormMultiSelect);
 
 export default {
-  props: ['nodeRegistry', 'moddle', 'processNode', 'parentHeight', 'canvasDragPosition', 'compressed'],
+  props: ['nodeRegistry', 'moddle', 'processNode', 'parentHeight', 'canvasDragPosition', 'compressed', 'definitions'],
   data() {
     return {
       inspectorHandler: null,
@@ -77,7 +77,7 @@ export default {
   },
   computed: {
     highlightedNode() {
-      return store.getters.highlightedNode;
+      return store.getters.highlightedNodes[0];
     },
     config() {
       if (!this.highlightedNode) {
@@ -111,22 +111,6 @@ export default {
         sequenceFlowConfigurationFormElements.push(expressionConfig);
       }
 
-      if (this.isSequenceFlow(type) && this.isConnectedToSubProcess(definition)) {
-        const startEventConfig = {
-          component: SequenceFlowFormSelect,
-          config: {
-            label: 'Sub Process Start Event',
-            name: 'startEvent',
-            targetSubProcess: definition.targetRef,
-            helper: definition.targetRef.calledElement
-              ? ''
-              : 'Please select a valid process on the connected sub process.',
-          },
-        };
-
-        sequenceFlowConfigurationFormElements.push(startEventConfig);
-      }
-
       return inspectorConfig;
     },
     isAnyNodeActive() {
@@ -137,15 +121,28 @@ export default {
         return noop;
       }
 
+      let inspectorHandler = this.defaultInspectorHandler;
+
       if (this.isProcessNodeActive) {
-        return this.processNodeInspectorHandler;
+        inspectorHandler = this.processNodeInspectorHandler;
       }
 
       if (this.hasCustomInspectorHandler) {
-        return this.customInspectorHandler;
+        inspectorHandler = this.customInspectorHandler;
       }
 
-      return this.defaultInspectorHandler;
+      return value => {
+        if (isString(value.documentation) && get(this.highlightedNode.definition.get('documentation')[0], 'text') !== value.documentation) {
+
+          const documentation = value.documentation
+            ? [this.moddle.create('bpmn:Documentation', { text: value.documentation })]
+            : undefined;
+
+          this.setNodeProp(this.highlightedNode, 'documentation', documentation);
+        }
+
+        inspectorHandler(omit(value, ['documentation']));
+      };
     },
     hasCustomInspectorHandler() {
       return this.nodeRegistry[this.highlightedNode.type].inspectorHandler;
@@ -164,6 +161,7 @@ export default {
         ? this.nodeRegistry[type].inspectorData(this.highlightedNode)
         : Object.entries(this.highlightedNode.definition).reduce((data, [key, value]) => {
           data[key] = value;
+
           return data;
         }, {});
     },
@@ -179,7 +177,7 @@ export default {
       return definition.targetRef.$type === 'bpmn:CallActivity';
     },
     customInspectorHandler(value) {
-      return this.nodeRegistry[this.highlightedNode.type].inspectorHandler(value, this.highlightedNode, this.setNodeProp, this.moddle);
+      return this.nodeRegistry[this.highlightedNode.type].inspectorHandler(value, this.highlightedNode, this.setNodeProp, this.moddle, this.definitions);
     },
     processNodeInspectorHandler(value) {
       return this.defaultInspectorHandler(omit(value, ['artifacts', 'flowElements', 'laneSets']));

@@ -1,5 +1,6 @@
 import {
   addNodeTypeToPaper,
+  assertDownloadedXmlContainsExpected,
   connectNodesWithFlow,
   dragFromSourceToDest,
   getElementAtPosition,
@@ -33,7 +34,7 @@ describe('Sequence Flows', () => {
       });
   });
 
-  it('Update Condition expression', () => {
+  it('Update name and condition expression', () => {
     const exclusiveGatewayPosition = { x: 400, y: 300 };
     dragFromSourceToDest(nodeTypes.exclusiveGateway, exclusiveGatewayPosition);
 
@@ -47,9 +48,23 @@ describe('Sequence Flows', () => {
       .then($links => $links[0])
       .click({ force: true });
 
-    const testString = 'foo > 7';
-    typeIntoTextInput('[name=conditionExpression]', testString);
-    cy.get('[name=conditionExpression]').should('have.value', testString);
+    const testNameString = 'Sequence name test';
+    typeIntoTextInput('[name=name]', testNameString);
+    cy.get('[name=name]').should('have.value', testNameString);
+
+    const testExpressionString = 'foo == 7';
+    typeIntoTextInput('[name=conditionExpression]', testExpressionString);
+    cy.get('[name=conditionExpression]').should('have.value', testExpressionString);
+
+    const sequenceFlowXml = `<bpmn:sequenceFlow id="node_4" name="${testNameString}" sourceRef="node_2" targetRef="node_3"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${testExpressionString}</bpmn:conditionExpression></bpmn:sequenceFlow>`;
+
+    cy.get('[data-test=downloadXMLBtn]').click();
+    cy.window()
+      .its('xml')
+      .then(removeIndentationAndLinebreaks)
+      .then(xml => {
+        expect(xml).to.contain(sequenceFlowXml);
+      });
   });
 
   /**
@@ -141,7 +156,7 @@ describe('Sequence Flows', () => {
     getElementAtPosition(taskPosition)
       .then(getLinksConnectedToElement)
       .then($links => $links[0])
-      .click('topRight');
+      .click('topRight', { force: true });
 
     waitToRenderAllShapes();
 
@@ -165,7 +180,7 @@ describe('Sequence Flows', () => {
     getElementAtPosition(newTaskPosition)
       .then(getLinksConnectedToElement)
       .then($links => $links[0])
-      .click('topRight');
+      .click('topRight', { force: true });
 
     cy.get(anchorSelector).then($anchor => {
       /* Anchor should still be on the right */
@@ -189,7 +204,7 @@ describe('Sequence Flows', () => {
     getElementAtPosition(startEventPosition)
       .then(getLinksConnectedToElement)
       .then($links => $links[0])
-      .click('topRight');
+      .click('topRight', { force: true });
 
     waitToRenderAllShapes();
 
@@ -213,7 +228,7 @@ describe('Sequence Flows', () => {
     getElementAtPosition(newStartEventPosition)
       .then(getLinksConnectedToElement)
       .then($links => $links[0])
-      .click('topRight');
+      .click('topRight', { force: true });
 
     cy.get(anchorSelector).then($anchor => {
       /* Anchor should still be on the bottom */
@@ -267,12 +282,12 @@ describe('Sequence Flows', () => {
       should('have.attr', 'fill', endColor);
   });
 
-  it('Removes sequence flows when switching task type', () => {
+  it('Retains sequence flows when switching task type', () => {
     const startPosition = { x: 150, y: 150 };
     const taskPosition = { x: 250, y: 250 };
     let numberOfSequenceFlowsAdded = 1;
 
-    const sequenceFlow = '<bpmn:sequenceFlow id="node_4" name="New Sequence Flow" sourceRef="node_1" targetRef="node_3"';
+    const sequenceFlow = '<bpmn:sequenceFlow id="node_4" sourceRef="node_1" targetRef="node_3"';
 
     addNodeTypeToPaper(taskPosition, nodeTypes.task, 'switch-to-script-task');
     getElementAtPosition(taskPosition).getType().should('equal', nodeTypes.scriptTask);
@@ -283,10 +298,7 @@ describe('Sequence Flows', () => {
       expect($links.length).to.eq(numberOfSequenceFlowsAdded);
     });
 
-    cy.get('[data-test=downloadXMLBtn]').click();
-    cy.window().its('xml').then(removeIndentationAndLinebreaks).then(xml => {
-      expect(xml).to.contain(sequenceFlow);
-    });
+    assertDownloadedXmlContainsExpected(sequenceFlow);
 
     waitToRenderAllShapes();
 
@@ -297,12 +309,10 @@ describe('Sequence Flows', () => {
     waitToRenderAllShapes();
 
     getElementAtPosition(taskPosition).then(getLinksConnectedToElement).should($links => {
-      expect($links.length).to.eq(--numberOfSequenceFlowsAdded);
+      expect($links.length).to.eq(numberOfSequenceFlowsAdded);
     });
 
-    cy.get('[data-test=downloadXMLBtn]').click();
-    cy.window().its('xml').then(removeIndentationAndLinebreaks).then(xml => {
-      expect(xml).to.not.contain(sequenceFlow);
-    });
+    const updatedSequenceFlow = '<bpmn:sequenceFlow id="node_4" sourceRef="node_1" targetRef="node_5"';
+    assertDownloadedXmlContainsExpected(updatedSequenceFlow);
   });
 });

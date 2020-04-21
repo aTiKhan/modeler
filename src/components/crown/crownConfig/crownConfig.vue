@@ -12,7 +12,7 @@
 
     <sequence-flow-button
       :node="node"
-      :sequence-flow-config="nodeRegistry['processmaker-modeler-sequence-flow']"
+      :node-registry="nodeRegistry"
       :moddle="moddle"
       v-on="$listeners"
       @toggle-crown-state="showCrown = $event"
@@ -26,6 +26,11 @@
       @toggle-crown-state="showCrown = $event"
     />
 
+    <default-flow
+      :node="node"
+      v-on="$listeners"
+    />
+
     <crown-dropdowns
       :dropdown-data="dropdownData"
       :boundary-event-dropdown-data="boundaryEventDropdownData"
@@ -35,6 +40,11 @@
       :shape="shape"
       :task-dropdown-initially-open="taskDropdownInitiallyOpen"
       @replace-node-type="replaceNodeTypePrompt"
+      v-on="$listeners"
+    />
+
+    <copy-button
+      :node="node"
       v-on="$listeners"
     />
 
@@ -65,11 +75,14 @@ import DeleteButton from '@/components/crown/crownButtons/deleteButton';
 import MessageFlowButton from '@/components/crown/crownButtons/messageFlowButton';
 import SequenceFlowButton from '@/components/crown/crownButtons/sequenceFlowButton';
 import AssociationFlowButton from '@/components/crown/crownButtons/associationFlowButton';
+import CopyButton from '@/components/crown/crownButtons/copyButton.vue';
 import CrownDropdowns from '@/components/crown/crownButtons/crownDropdowns';
+import DefaultFlow from '@/components/crown/crownButtons/defaultFlowButton.vue';
 import poolLaneCrownConfig from '@/mixins/poolLaneCrownConfig';
-import { removeFlows } from '@/components/crown/utils.js';
 import pull from 'lodash/pull';
 import store from '@/store';
+import isEqual from 'lodash/isEqual';
+import { getDefaultNodeColors, setShapeColor } from '@/components/nodeColors';
 
 export default {
   components: {
@@ -78,6 +91,8 @@ export default {
     MessageFlowButton,
     SequenceFlowButton,
     AssociationFlowButton,
+    CopyButton,
+    DefaultFlow,
   },
   props: {
     highlighted: Boolean,
@@ -102,8 +117,20 @@ export default {
   },
   mixins: [poolLaneCrownConfig],
   watch: {
+    'node.definition.color': {
+      handler() {
+        this.setNodeColor();
+      },
+      deep: true,
+    },
+    highlightedShapes(shapes, prevShapes) {
+      if (isEqual(shapes, prevShapes)) {
+        return;
+      }
+
+      this.showCrown = this.highlightedShapes[0] === this.shape;
+    },
     highlighted(highlighted) {
-      this.showCrown = highlighted;
       if (!highlighted) {
         this.taskDropdownInitiallyOpen = false;
       }
@@ -142,12 +169,18 @@ export default {
         ? this.node.pool.component.containingProcess
         : this.processNode.definition;
     },
+    highlightedShapes: () => store.getters.highlightedShapes,
   },
   methods: {
+    setNodeColor() {
+      const color = this.node.definition.get('color');
+      const { fill, stroke } = getDefaultNodeColors(this.node, color);
+
+      setShapeColor(this.shape, fill, stroke);
+    },
     paperNotRendered() {
       return !this.isRendering;
     },
-    removeFlows,
     replaceNodeTypePrompt(node) {
       if (this.taskDropdownInitiallyOpen) {
         this.$emit('replace-node', node);
@@ -157,7 +190,6 @@ export default {
       this.nodeToReplace = node;
     },
     confirmedReplaceNodeType() {
-      this.removeFlows(this.graph, this.shape);
       this.$emit('replace-node', this.nodeToReplace);
     },
     setNodePosition() {
@@ -236,6 +268,7 @@ export default {
 
     this.setUpCrownConfig();
     this.setUpPositionHandling();
+    this.setNodeColor();
   },
   destroyed() {
     this.shape.stopListening();

@@ -11,9 +11,7 @@
     :process-node="processNode"
     :plane-elements="planeElements"
     :is-rendering="isRendering"
-    @remove-node="$emit('remove-node', $event)"
-    @add-node="$emit('add-node', $event)"
-    @save-state="$emit('save-state', $event)"
+    v-on="$listeners"
   />
 </template>
 
@@ -110,6 +108,7 @@ export default {
     this.shape.attr({
       body: {
         refPoints: '25 10 3 10 3 3 25 3',
+        fill: 'none',
       },
       label: {
         fill: 'black',

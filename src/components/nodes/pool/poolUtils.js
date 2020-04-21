@@ -13,7 +13,6 @@ function createPool(node, graph) {
   }));
   pool.attr('body', {
     fill: poolColor,
-    originalFill: poolColor,
   });
   pool.addTo(graph);
   return pool;
@@ -23,7 +22,7 @@ function addAllElementsToPool(graph, pool) {
   graph
     .getElements()
     .filter((shape) => shape !== pool)
-    .filter(({ component }) => component.node.isBpmnType('bpmn:BoundaryEvent'))
+    .filter(({ component }) => !component.node.isBpmnType('bpmn:BoundaryEvent'))
     .forEach(({ component }) => {
       pool.embed(component.shape);
       component.node.pool = pool;

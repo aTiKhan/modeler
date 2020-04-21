@@ -34,10 +34,7 @@ You can now run any of the below commands. Most commands make calls `vue-cli-ser
 # Compile the app and start a local development server
 npm run serve
 
-# Create a production build of the app
-npm run build
-
-# Compile the app to be distributed as an npm package
+# Create a production build of the app to be distributed as an npm package
 npm run build-bundle
 
 # Report and fix ESLint errors
@@ -233,7 +230,7 @@ export default {
   // moddle is a reference to an instance of bpmn-moddle: https://github.com/bpmn-io/bpmn-moddle
   definition(moddle) {
     return moddle.create('bpmn:ScriptTask', {
-      name: 'New Script Task',
+      name: 'Script Task',
     });
   },
 

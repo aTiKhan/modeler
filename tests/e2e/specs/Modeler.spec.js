@@ -1,5 +1,7 @@
 import {
   addNodeTypeToPaper,
+  assertDownloadedXmlContainsExpected,
+  assertDownloadedXmlDoesNotContainExpected,
   connectNodesWithFlow,
   dragFromSourceToDest,
   getCrownButtonForElement,
@@ -150,6 +152,7 @@ describe('Modeler', () => {
 
     getElementAtPosition(gatewayPosition).click();
 
+    cy.contains('Advanced').click();
     cy.get('[name=gatewayDirection]').select('Converging');
 
     waitToRenderNodeUpdates();
@@ -231,12 +234,12 @@ describe('Modeler', () => {
     const invalidId = '12 id!';
     typeIntoTextInput('[name=id]', invalidId);
 
-    cy.get('.invalid-feedback').should('contain', 'The id format is invalid.');
+    cy.get('.invalid-feedback').should('contain', 'The Node Identifier format is invalid.');
 
     const validId = 'Process_1';
     typeIntoTextInput('[name=id]', validId);
 
-    cy.get('.invalid-feedback').should('not.have.value', 'The id format is invalid.');
+    cy.get('.invalid-feedback').should('not.have.value', 'The Node Identifier format is invalid.');
   });
 
   it('updates validation after undo/redo', () => {
@@ -296,6 +299,16 @@ describe('Modeler', () => {
     cy.get('[data-test="validation-list"]').should('contain', warning);
   });
 
+  it('shows warning for non-default base element during parsing', () => {
+    uploadXml('nonDefaultBaseElement.xml');
+    const warning = 'Unsupported Element bpmn:IntermediateCatchEvent is an unsupported element type in parse';
+
+    cy.get('[data-test="validation-toggle"]').click({ force: true });
+    cy.get('[data-test="validation-list-toggle"]').click({ force: true });
+    cy.get('[data-test="validation-list"]').should('contain', warning);
+    getGraphElements().should('have.length', 0);
+  });
+
   it('check for joint marker class on linkTools', () => {
     const startEventPosition = { x: 150, y: 150 };
     const taskPosition = { x: 300, y: 300 };
@@ -306,7 +319,7 @@ describe('Modeler', () => {
     getElementAtPosition(startEventPosition)
       .then(getLinksConnectedToElement)
       .then($links => $links[0])
-      .click('topRight');
+      .click('topRight', { force: true });
 
     cy.get('[data-tool-name=vertices]').trigger('mousedown', 'topRight');
     cy.get('[data-tool-name=vertices]').trigger('mousemove', 'bottomLeft', { force: true });
@@ -318,7 +331,7 @@ describe('Modeler', () => {
   it('persist boundary event with sequence flow in XML', () => {
     uploadXml('../fixtures/boundaryEvent.xml');
 
-    const sequenceFlowXML = '<bpmn:sequenceFlow id="node_5" name="New Sequence Flow" sourceRef="node_3" targetRef="node_2" pm:startEvent="" />';
+    const sequenceFlowXML = '<bpmn:sequenceFlow id="node_5" name="Sequence Flow" sourceRef="node_3" targetRef="node_2" />';
 
     cy.get('[data-test=downloadXMLBtn]').click();
     cy.window()
@@ -444,7 +457,7 @@ describe('Modeler', () => {
     cy.get('[data-test=panels-btn]').click();
     cy.wait(700);
     dragFromSourceToDest(nodeTypes.task, taskPosition);
-    getElementAtPosition({ x: taskPosition.x + 5, y: taskPosition.y }).click().getType()
+    getElementAtPosition({ x: taskPosition.x + 5, y: taskPosition.y }).click({ force: true }).getType()
       .should('equal', nodeTypes.task);
   });
 
@@ -480,5 +493,102 @@ describe('Modeler', () => {
 
     cy.get('[data-test=switch-to-start-timer-event]').should('not.exist');
     cy.get('[data-test=switch-to-message-start-event]').should('not.exist');
+  });
+
+  it('can render a file with non-existent element', () => {
+    uploadXml('non-existent-element.xml');
+
+    cy.get('[data-test="validation-toggle"]').click({ force: true });
+    cy.get('[data-test="validation-list-toggle"]').click({ force: true });
+    cy.get('[data-test=validation-list]').should($list => {
+      expect($list).to.contain('references a non-existent element and was not parsed');
+    });
+  });
+
+  it('Does not display a console error on multiple validation errors for one node', () => {
+    cy.window().then((win) => {
+      cy.spy(win.console, 'error');
+    });
+
+    const taskPosition1 = { x: 300, y: 250 };
+    const taskPosition2 = { x: 300, y: 350 };
+    const taskPosition3 = { x: 300, y: 450 };
+    const parallelGatewayPosition = { x: 200, y: 200 };
+
+    addNodeTypeToPaper(parallelGatewayPosition, nodeTypes.exclusiveGateway, 'switch-to-parallel-gateway');
+    dragFromSourceToDest(nodeTypes.task, taskPosition1);
+    dragFromSourceToDest(nodeTypes.task, taskPosition2);
+    dragFromSourceToDest(nodeTypes.task, taskPosition3);
+
+    connectNodesWithFlow('sequence-flow-button', taskPosition1, parallelGatewayPosition);
+    connectNodesWithFlow('sequence-flow-button', taskPosition2, parallelGatewayPosition);
+    connectNodesWithFlow('sequence-flow-button', parallelGatewayPosition, taskPosition3);
+
+    cy.get('[data-test="validation-toggle"]').click({ force: true });
+    cy.get('[data-test="validation-list-toggle"]').click();
+
+    cy.get('[data-test=validation-list]')
+      .should('contain.text', 'Gateway must have multiple outgoing Sequence Flows.Node ID: node_3');
+    cy.get('[data-test=validation-list]')
+      .should('contain.text', 'Gateway must not have multiple incoming Sequence Flows.Node ID: node_3');
+
+    cy.window().then((win) => {
+      expect(win.console.error).to.have.callCount(0);
+    });
+  });
+
+  it('should add and remove documentation to element', () => {
+    const position = { x: 300, y: 300 };
+    const baseElements = [
+      nodeTypes.startEvent,
+      nodeTypes.intermediateCatchEvent,
+      nodeTypes.endEvent,
+      nodeTypes.task,
+      nodeTypes.exclusiveGateway,
+      nodeTypes.pool,
+      nodeTypes.textAnnotation,
+    ];
+
+    baseElements
+      .forEach(type => {
+        const docString = `${type} doc!`;
+
+        dragFromSourceToDest(type, position);
+        cy.contains('Advanced').click();
+        cy.get('[name="documentation"]').clear().type(docString);
+        assertDownloadedXmlContainsExpected(docString);
+
+        cy.get('[name="documentation"]').clear();
+        assertDownloadedXmlDoesNotContainExpected('bpmn:documentation');
+
+        getElementAtPosition(position, type)
+          .click({ force: true })
+          .then($element => {
+            getCrownButtonForElement($element, 'delete-button').click({ force: true });
+          });
+      });
+  });
+
+  it('after collapsing panels, show inspector panel when element is highlighted', () => {
+    cy.get('[data-test="panels-btn"]').click();
+    cy.get('[data-test="inspector-container"]').should('not.be.visible');
+
+    const startEventPosition = { x: 150, y: 150 };
+    getElementAtPosition(startEventPosition).click();
+    cy.get('[data-test="inspector-container"]').should('be.visible');
+
+    cy.get('.paper-container').click();
+    cy.get('[data-test="inspector-container"]').should('not.be.visible');
+  });
+
+  it('should hide the crown when adding a sequence flow', () => {
+    cy.get('.crown-config').should('not.exist');
+
+    const startEventPosition = { x: 150, y: 150 };
+    getElementAtPosition(startEventPosition).click();
+    cy.get('.crown-config').should('exist');
+
+    cy.get('#sequence-flow-button').click();
+    cy.get('.crown-config').should('not.exist');
   });
 });

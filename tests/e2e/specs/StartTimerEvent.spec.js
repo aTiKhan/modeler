@@ -39,13 +39,12 @@ describe('Start Timer Event', () => {
     cy.get('[data-test=ends-on]').click('left', { force: true });
     cy.get('[data-test=end-date-picker]').click();
     cy.get('.day').contains('22').click();
-    cy.get('[title="Select Time"]').should('not.exist');
 
-    cy.get('[data-test=end-date-picker]').should('have.value', '08/22/2019');
+    cy.get('[data-test=end-date-picker]').should('have.value', '08/22/2019 5:30 AM');
     cy.get('.paper-container').click();
     getElementAtPosition(startTimerEventPosition).click();
     cy.contains('Timing Control').click();
-    cy.get('[data-test=end-date-picker]').should('have.value', '08/22/2019');
+    cy.get('[data-test=end-date-picker]').should('have.value', '08/22/2019 5:30 AM');
 
     const timerExpression1 = 'R/2019-08-14T05:30:00.000Z/P3W/2019-08-22T05:30:00.000Z';
     cy.get('[data-test=downloadXMLBtn]').click();
@@ -104,7 +103,7 @@ describe('Start Timer Event', () => {
     ];
 
     periods.forEach(({ selector, letter }) => {
-      cy.get('[data-test=repeat-on-select]').select(selector);
+      cy.get('[data-test=repeat-on-select]').select(selector, { force: true });
 
       const timerExpression = `R/${currentDateString}/P${repeat}${letter}/2019-0${month + 1}-${endDay}T${hour}:00:00.000Z`;
       cy.get('[data-test=downloadXMLBtn]').click();

@@ -11,9 +11,7 @@
     :process-node="processNode"
     :plane-elements="planeElements"
     :is-rendering="isRendering"
-    @remove-node="$emit('remove-node', $event)"
-    @add-node="$emit('add-node', $event)"
-    @save-state="$emit('save-state', $event)"
+    v-on="$listeners"
   />
 </template>
 
@@ -46,12 +44,12 @@ export default {
     'processNode',
     'planeElements',
     'isRendering',
+    'isActive',
   ],
   mixins: [highlightConfig, portsConfig, hideLabelOnDrag],
   data() {
     return {
       shape: null,
-      definition: null,
       previousPosition: null,
       validPosition: null,
       invalidTargetElement: null,
@@ -179,7 +177,7 @@ export default {
       });
     },
     turnInvalidTargetRed() {
-      if (!this.highlighted) {
+      if (!this.isActive) {
         return;
       }
 

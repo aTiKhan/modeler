@@ -1,8 +1,7 @@
 import { dia, linkTools } from 'jointjs';
-import pull from 'lodash/pull';
 import get from 'lodash/get';
 import debounce from 'lodash/debounce';
-import { invalidNodeColor, validNodeColor } from '@/components/nodeColors';
+import { invalidNodeColor, setShapeColor, validNodeColor } from '@/components/nodeColors';
 import { getDefaultAnchorPoint } from '@/portsUtils';
 import resetShapeColor from '@/components/resetShapeColor';
 
@@ -46,9 +45,7 @@ export default {
         });
         this.shapeView.showTools();
       } else {
-        this.shape.attr({
-          line: { stroke: 'black' },
-        });
+        resetShapeColor(this.shape);
         this.shapeView.hideTools();
       }
     },
@@ -107,10 +104,6 @@ export default {
     setTarget(targetShape, connectionPoint) {
       this.setEndpoint(targetShape, endpoints.target, connectionPoint);
     },
-    setBodyColor(color, target = this.target) {
-      target.attr('body/fill', color);
-      target.attr('.body/fill', color);
-    },
     completeLink() {
       this.shape.stopListening(this.paper, 'cell:mouseleave');
       this.$emit('set-cursor', null);
@@ -159,7 +152,7 @@ export default {
         });
 
         if (this.target) {
-          this.setBodyColor(invalidNodeColor);
+          setShapeColor(this.target, invalidNodeColor);
         }
 
         return;
@@ -168,7 +161,7 @@ export default {
       this.setTarget(this.target);
       this.updateRouter();
       this.$emit('set-cursor', 'default');
-      this.setBodyColor(validNodeColor);
+      setShapeColor(this.target, validNodeColor);
 
       this.paper.el.removeEventListener('mousemove', this.updateLinkTarget);
       this.shape.listenToOnce(this.paper, 'cell:pointerclick', () => {
@@ -296,19 +289,6 @@ export default {
     document.removeEventListener('mouseup', this.emitSave);
   },
   destroyed() {
-    /* Modify source and target refs to remove incoming and outgoing properties pointing to this link */
-    const { sourceRef, targetRef } = this.node.definition;
-    if (sourceRef) {
-      pull(sourceRef.get('outgoing'), this.node.definition);
-    }
-
-    /* If targetRef is defined, it could be a point or another element.
-     * If targetRef has an id, that means it's an element and the reference to it
-     * can be safely removed. */
-    if (targetRef.id) {
-      pull(targetRef.get('incoming'), this.node.definition);
-    }
-
     this.updateWaypoints.cancel();
   },
 };

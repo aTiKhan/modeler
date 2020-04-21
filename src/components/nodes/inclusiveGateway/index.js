@@ -2,17 +2,21 @@ import component from './inclusiveGateway.vue';
 import { gatewayDirection } from '../gateway/gatewayConfig';
 import idConfigSettings from '@/components/inspectors/idConfigSettings';
 import nameConfigSettings from '@/components/inspectors/nameConfigSettings';
+import DocumentationFormTextArea from '@/components/inspectors/DocumentationFormTextArea';
+import defaultNames from '@/components/nodes/gateway/defaultNames';
+
+const id = 'processmaker-modeler-inclusive-gateway';
 
 export default {
-  id: 'processmaker-modeler-inclusive-gateway',
+  id,
   component,
   bpmnType: 'bpmn:InclusiveGateway',
   control: false,
   category: 'BPMN',
-  label: 'Inclusive Gateway',
+  label: defaultNames[id],
   definition(moddle, $t) {
     return moddle.create('bpmn:InclusiveGateway', {
-      name: $t('New Inclusive Gateway'),
+      name: $t(defaultNames[id]),
       gatewayDirection: gatewayDirection.diverging,
     });
   },
@@ -26,7 +30,7 @@ export default {
   },
   inspectorConfig: [
     {
-      name: 'Inclusive Gateway',
+      name: defaultNames[id],
       items: [
         {
           component: 'FormAccordion',
@@ -41,18 +45,6 @@ export default {
             {
               component: 'FormInput',
               config: nameConfigSettings,
-            },
-            {
-              component: 'FormSelect',
-              config: {
-                label: 'Direction',
-                helper: 'Select the direction of workflow for this element',
-                name: 'gatewayDirection',
-                options: [
-                  { value: gatewayDirection.diverging, content: 'Diverging' },
-                  { value: gatewayDirection.converging, content: 'Converging' },
-                ],
-              },
             },
           ],
         },
@@ -69,6 +61,25 @@ export default {
             {
               component: 'FormInput',
               config: idConfigSettings,
+            },
+            {
+              component: 'FormSelect',
+              config: {
+                label: 'Direction',
+                helper: 'Select the direction of workflow for this element',
+                name: 'gatewayDirection',
+                options: [
+                  { value: gatewayDirection.diverging, content: 'Diverging' },
+                  { value: gatewayDirection.converging, content: 'Converging' },
+                ],
+              },
+            },
+            {
+              component: DocumentationFormTextArea,
+              config: {
+                label: 'Description',
+                name: 'documentation',
+              },
             },
           ],
         },

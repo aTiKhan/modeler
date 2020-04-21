@@ -1,6 +1,7 @@
 import { saveDebounce } from '../../../src/components/inspectors/inspectorConstants';
 import path from 'path';
-import { nodeTypes } from './constants';
+import { boundaryEventSelector, nodeTypes, taskSelector } from './constants';
+import { gridSize } from '../../../src/graph';
 
 const renderTime = 300;
 
@@ -23,7 +24,7 @@ export function getGraphElements() {
 }
 
 export function getElementAtPosition(position, componentType) {
-  const paperGridSize = 10;
+  const paperGridSize = gridSize;
   const searchRectangle = {
     width: paperGridSize,
     height: paperGridSize,
@@ -112,6 +113,12 @@ export function typeIntoTextInput(selector, value) {
   waitToRenderNodeUpdates();
 }
 
+export function selectOptionByName(selector, name) {
+  cy.get(selector).click();
+  cy.get(selector).get('li span span:contains("' + name + '")').click();
+  waitToRenderNodeUpdates();
+}
+
 export function waitToRenderAllShapes() {
   cy.wait(renderTime);
 }
@@ -178,10 +185,22 @@ export function moveElementRelativeTo(elementPosition, x, y, componentType) {
       .then($element => {
         const { left, top } = $element.position();
         const newPosition = paper.localToPagePoint(left + x, top + y);
-        cy.wrap($element)
-          .trigger('mousedown', 'topLeft', { which: 1, force: true })
-          .trigger('mousemove', 'topLeft', { clientX: newPosition.x, clientY: newPosition.y, force: true })
-          .trigger('mouseup', 'topLeft', { force: true });
+        const { tx, ty } = paper.translate();
+
+        return cy.get('.main-paper').then($paperContainer => {
+          const { x: paperX, y: paperY } = $paperContainer[0].getBoundingClientRect();
+          const mouseMoveOptions = {
+            clientX: newPosition.x - (paperX + tx),
+            clientY: newPosition.y - (paperY + ty),
+            force: true,
+          };
+
+          cy.wrap($element)
+            .trigger('mousedown', 'topLeft', { which: 1, force: true })
+            .trigger('mousemove', 'topLeft', mouseMoveOptions)
+            .trigger('mouseup', 'topLeft', { force: true });
+        });
+
       });
   });
 }
@@ -277,8 +296,22 @@ export function assertDownloadedXmlDoesNotContainExpected(xmlString) {
   });
 }
 
+export function assertBoundaryEventIsCloseToTask() {
+  const positionErrorMargin = 30;
+
+  cy.get(taskSelector).then($task => {
+    const { left: taskLeft, top: taskTop } = $task.position();
+    cy.get(boundaryEventSelector).then($boundaryEvent => {
+      const { left, top } = $boundaryEvent.position();
+      expect(left).to.be.closeTo(taskLeft, positionErrorMargin);
+      expect(top).to.be.closeTo(taskTop, positionErrorMargin);
+    });
+  });
+}
+
 export function addNodeTypeToPaper(nodePosition, genericNode, nodeToSwitchTo) {
   dragFromSourceToDest(genericNode, nodePosition);
+  waitToRenderAllShapes();
   cy.get(`[data-test=${nodeToSwitchTo}]`).click();
 }
 

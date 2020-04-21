@@ -1,9 +1,8 @@
 import {
   addNodeTypeToPaper,
-  connectNodesWithFlow,
+  assertDownloadedXmlContainsExpected,
   dragFromSourceToDest,
   getElementAtPosition,
-  getLinksConnectedToElement,
   modalCancel,
   modalConfirm,
   typeIntoTextInput,
@@ -14,10 +13,9 @@ import { nodeTypes } from '../support/constants';
 
 describe('Tasks', () => {
   const taskPosition = { x: 250, y: 250 };
+  const testString = 'testing';
 
   it('Update task name', () => {
-    const testString = 'testing';
-
     dragFromSourceToDest(nodeTypes.task, taskPosition);
 
     getElementAtPosition(taskPosition).click();
@@ -37,96 +35,63 @@ describe('Tasks', () => {
     getElementAtPosition(taskPosition).getType().should('equal', nodeTypes.task);
   });
 
-  it('Can create sub process flow', () => {
+  it('Can create sub process with config', () => {
+    const processName = 'Process with multiple start events';
     const subProcessPosition = { x: 250, y: 250 };
+    const subProcessName = 'Sub Process';
+    const startEventName = 'Start Event Two';
+    const encodedConfig = JSON.stringify({
+      calledElement: 'Subprocess1-5',
+      processId: 5,
+      startEvent: 'node_10',
+      name: `${subProcessName}`,
+    }).replace(/"/g, '&#34;');
+
     addNodeTypeToPaper(subProcessPosition, nodeTypes.task, 'switch-to-sub-process');
-
-    getElementAtPosition(subProcessPosition).should('exist');
-
-    connectNodesWithFlow('sequence-flow-button', { x: 150, y: 150 }, subProcessPosition);
     getElementAtPosition(subProcessPosition)
-      .then(getLinksConnectedToElement)
-      .then($links => $links[0])
       .click({ force: true });
 
-    waitToRenderAllShapes();
-
-    cy.get('.inspector-container')
-      .should('contain', 'A process has not been configured in the connected Sub Process task.');
-    cy.get('[name=startEvent]').should('not.exist');
-
-    getElementAtPosition(subProcessPosition).click({ force: true });
-
-    cy.get('.inspector-container').contains('Open Process').should('not.exist');
-    cy.get('.multiselect')
+    cy.get('[data-test="inspector-container"]')
+      .contains('Process')
+      .next('.multiselect')
       .click()
       .find('.multiselect__content')
-      .contains('Process with start event')
+      .contains(processName)
       .click();
-    cy.get('.inspector-container')
-      .contains('Open Process')
-      .should('exist');
 
-    waitToRenderAllShapes();
-
-    getElementAtPosition(subProcessPosition)
-      .then(getLinksConnectedToElement)
-      .then($links => $links[0])
-      .click({ force: true });
-
-    waitToRenderAllShapes();
-
-    cy.get('.inspector-container')
-      .should('not.contain', 'A process has not been configured in the connected Sub Process task.');
-    cy.get('[name=startEvent]').select('awesome start event');
-
-    const sequenceFlowXml = '<bpmn:sequenceFlow id="node_4" name="New Sequence Flow" sourceRef="node_1" targetRef="node_3" pm:startEvent="node_2" />';
-    const subProcessXml = `<bpmn:callActivity id="node_3" name="Process with start event" calledElement="ProcessId-3">
-      <bpmn:incoming>node_4</bpmn:incoming>
-    </bpmn:callActivity>`;
-
-    cy.get('[data-test=downloadXMLBtn]').click();
-    cy.window()
-      .its('xml')
-      .then(xml => xml.trim())
-      .then(xml => {
-        expect(xml).to.contain(sequenceFlowXml.trim());
-        expect(xml).to.contain(subProcessXml.trim());
-      });
-
-    getElementAtPosition(subProcessPosition).click({ force: true });
-    cy.get('.multiselect')
+    cy.get('[data-test="inspector-container"]')
+      .contains('Start Event')
+      .next('.multiselect')
       .click()
-      .get('.multiselect__content')
-      .contains('Process with start event')
+      .find('.multiselect__content')
+      .contains(startEventName)
       .click();
 
-    getElementAtPosition(subProcessPosition)
-      .then(getLinksConnectedToElement)
-      .then($links => $links[0])
-      .click({ force: true });
-
-    waitToRenderAllShapes();
-    cy.get('.inspector-container')
-      .should('contain', 'A process has not been configured in the connected Sub Process task.');
-
-    const emptyCallActivityXml = 'calledElement=""';
-    cy.get('[data-test=downloadXMLBtn]').click();
-    cy.window()
-      .its('xml')
-      .then(xml => xml.trim())
-      .then(xml => {
-        expect(xml).to.contain(emptyCallActivityXml.trim());
-      });
+    assertDownloadedXmlContainsExpected(`<bpmn:callActivity id="node_3" name="${subProcessName}" calledElement="Subprocess1-5" pm:config="${encodedConfig}" />`);
   });
 
   it('Can switch task type when initially added', () => {
     addNodeTypeToPaper(taskPosition, nodeTypes.task, 'switch-to-sub-process');
 
     getElementAtPosition(taskPosition).click().getType().should('equal', nodeTypes.subProcess);
+    cy.get('[data-test="select-type-dropdown"]').click();
     cy.get('[data-test=switch-to-manual-task]').click();
+    modalConfirm();
 
     getElementAtPosition(taskPosition).click().getType().should('equal', nodeTypes.manualTask);
+  });
+
+  it('Can keep the name when switching task type', () => {
+    addNodeTypeToPaper(taskPosition, nodeTypes.task, 'switch-to-sub-process');
+    typeIntoTextInput('[name=name]', testString);
+
+    getElementAtPosition(taskPosition).click().getType().should('equal', nodeTypes.subProcess);
+    cy.get('[data-test="select-type-dropdown"]').click();
+    cy.get('[data-test=switch-to-manual-task]').click();
+    modalConfirm();
+
+    getElementAtPosition(taskPosition).click().getType().should('equal', nodeTypes.manualTask);
+    cy.get('[name=name]').should('have.value', testString);
   });
 
   it('Can switch task type after initially added', () => {
@@ -153,5 +118,11 @@ describe('Tasks', () => {
     modalCancel();
 
     getElementAtPosition(taskPosition).click().getType().should('equal', nodeTypes.subProcess);
+  });
+
+  it('Allows typing in name field on new sub process', () => {
+    addNodeTypeToPaper(taskPosition, nodeTypes.task, 'switch-to-sub-process');
+    typeIntoTextInput('[name=name]', testString);
+    cy.get('[name=name]').should('have.value', testString);
   });
 });

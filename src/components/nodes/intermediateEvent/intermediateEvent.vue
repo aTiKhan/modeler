@@ -23,6 +23,7 @@ import hasMarkers from '@/mixins/hasMarkers';
 import hideLabelOnDrag from '@/mixins/hideLabelOnDrag';
 import CrownConfig from '@/components/crown/crownConfig/crownConfig';
 import highlightConfig from '@/mixins/highlightConfig';
+import defaultNames from '@/components/nodes/intermediateEvent/defaultNames';
 
 export default {
   components: {
@@ -48,16 +49,27 @@ export default {
       definition: null,
       dropdownData: [
         {
-          label: 'Intermediate Timer Event',
+          label: defaultNames['processmaker-modeler-intermediate-catch-timer-event'],
           nodeType: 'processmaker-modeler-intermediate-catch-timer-event',
+          dataTest: 'switch-to-intermediate-timer-catch-event',
         },
         {
-          label: 'Intermediate Message Catch Event',
+          label: defaultNames['processmaker-modeler-intermediate-signal-catch-event'],
+          nodeType: 'processmaker-modeler-intermediate-signal-catch-event',
+          dataTest: 'switch-to-intermediate-signal-catch-event',
+        },
+        {
+          label: defaultNames['processmaker-modeler-intermediate-signal-throw-event'],
+          nodeType: 'processmaker-modeler-intermediate-signal-throw-event',
+          dataTest: 'switch-to-intermediate-signal-throw-event',
+        },
+        {
+          label: defaultNames['processmaker-modeler-intermediate-message-catch-event'],
           nodeType: 'processmaker-modeler-intermediate-message-catch-event',
           dataTest: 'switch-to-intermediate-message-catch-event',
         },
         {
-          label: 'Intermediate Message Throw Event',
+          label: defaultNames['processmaker-modeler-intermediate-message-throw-event'],
           nodeType: 'processmaker-modeler-intermediate-message-throw-event',
           dataTest: 'switch-to-intermediate-message-throw-event',
         },

@@ -11,43 +11,13 @@ import {
   removeIndentationAndLinebreaks,
   setBoundaryEvent,
   waitToRenderAllShapes,
-} from '../support/utils';
-import { boundaryEventSelector, nodeTypes } from '../support/constants';
-import { defaultNodeColor, invalidNodeColor, poolColor, startColor } from '../../../src/components/nodeColors';
+} from './utils';
+import { boundaryEventSelector, nodeTypes } from './constants';
+import { invalidNodeColor, poolColor, startColor } from '../../../src/components/nodeColors';
 
 const boundaryEventPosition = { x: 280, y: 200 };
 const taskPosition = { x: 250, y: 200 };
 
-const boundaryEventData = [{
-  type: 'Boundary Timer Event',
-  nodeType: nodeTypes.boundaryTimerEvent,
-  eventXMLSnippet: '<bpmn:boundaryEvent id="node_3" name="New Boundary Timer Event" attachedToRef="node_2"><bpmn:timerEventDefinition><bpmn:timeDuration>PT1H</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:boundaryEvent>',
-  taskType: nodeTypes.task,
-  taskTypeSelector: 'switch-to-user-task',
-  invalidTargets: [{ type: nodeTypes.startEvent }],
-}, {
-  type: 'Boundary Error Event',
-  nodeType: nodeTypes.boundaryErrorEvent,
-  eventXMLSnippet: '<bpmn:boundaryEvent id="node_3" name="New Boundary Error Event" attachedToRef="node_2"><bpmn:errorEventDefinition /></bpmn:boundaryEvent>',
-  taskType: nodeTypes.task,
-  taskTypeSelector: 'switch-to-user-task',
-  invalidTargets: [{ type: nodeTypes.startEvent }],
-}, {
-  type: 'Boundary Escalation Event',
-  skip: true,
-  nodeType: nodeTypes.boundaryEscalationEvent,
-  eventXMLSnippet: '<bpmn:boundaryEvent id="node_4" name="New Boundary Escalation Event" attachedToRef="node_3"><bpmn:escalationEventDefinition /></bpmn:boundaryEvent>',
-  taskType: nodeTypes.subProcess,
-  taskTypeSelector: 'switch-to-sub-process',
-  invalidTargets: [{ type: nodeTypes.startEvent }, { type: nodeTypes.task, color: defaultNodeColor }],
-}, {
-  type: 'Boundary Message Event',
-  nodeType: nodeTypes.boundaryMessageEvent,
-  eventXMLSnippet: '<bpmn:boundaryEvent id="node_4" name="New Boundary Message Event" attachedToRef="node_3"><bpmn:messageEventDefinition /></bpmn:boundaryEvent>',
-  taskType: nodeTypes.subProcess,
-  taskTypeSelector: 'switch-to-sub-process',
-  invalidTargets: [{ type: nodeTypes.startEvent }],
-}];
 
 function testThatBoundaryEventIsCloseToTask(boundaryEvent, task) {
   const boundaryPosition = boundaryEvent.position();
@@ -70,9 +40,10 @@ function configurePool(poolPosition, nodeType, taskType, taskTypeSelector) {
   dragFromSourceToDest(nodeTypes.pool, poolPosition);
 }
 
-boundaryEventData.forEach(({ type, nodeType, eventXMLSnippet, taskType, taskTypeSelector, invalidTargets, skip = false }) => {
-  (skip ? describe.skip : describe)(`Common behaviour test for boundary event type ${type}`, () => {
+export function CommonBoundaryEventBehaviour({ type, nodeType, eventXMLSnippet, taskType, taskTypeSelector, invalidTargets, skip = false }) {
+  (skip ? describe.skip : describe)(`Common behaviour test for boundary event type ${ type }`, () => {
     it('can render a boundary event of this type', () => {
+      waitToRenderAllShapes();
       addNodeTypeToPaper(taskPosition, nodeTypes.task, taskTypeSelector);
 
       setBoundaryEvent(nodeType, taskPosition, taskType);
@@ -152,6 +123,7 @@ boundaryEventData.forEach(({ type, nodeType, eventXMLSnippet, taskType, taskType
       setBoundaryEvent(nodeType, outgoingTaskPosition, taskType);
       moveElement(outgoingTaskPosition, boundaryEventPosition.x, boundaryEventPosition.y);
       connectNodesWithFlow('sequence-flow-button', boundaryEventPosition, outgoingTaskPosition);
+      waitToRenderAllShapes();
 
       const numberOfSequenceFlowsAdded = 1;
 
@@ -217,10 +189,12 @@ boundaryEventData.forEach(({ type, nodeType, eventXMLSnippet, taskType, taskType
       const boundaryEventConnectedPosition = { x: 290, y: 182 };
       setBoundaryEvent(nodeType, taskPosition, taskType);
 
-      getElementAtPosition(boundaryEventPosition, nodeType).getPosition()
+      getElementAtPosition(boundaryEventPosition, nodeType)
+        .getPosition()
         .should('contain', boundaryEventConnectedPosition);
       getElementAtPosition(boundaryEventPosition, nodeType).click();
-      getElementAtPosition(boundaryEventPosition, nodeType).getPosition()
+      getElementAtPosition(boundaryEventPosition, nodeType)
+        .getPosition()
         .should('contain', boundaryEventConnectedPosition);
     });
 
@@ -358,14 +332,17 @@ boundaryEventData.forEach(({ type, nodeType, eventXMLSnippet, taskType, taskType
       dragFromSourceToDest(nodeTypes.pool, taskPosition);
       addNodeTypeToPaper(taskPosition, nodeTypes.task, taskTypeSelector);
       setBoundaryEvent(nodeType, taskPosition, taskType);
-      getElementAtPosition(taskPosition).then($boundaryEvent => {
+      getElementAtPosition(taskPosition, nodeType).then($boundaryEvent => {
         const overPoolPosition = { x: 450, y: 450 };
         const overTaskPosition = { x: 550, y: 350 };
 
         [overPoolPosition, overTaskPosition].forEach(({ x, y }) => {
           cy.wrap($boundaryEvent)
-            .trigger('mousedown', { which: 1, force: true })
-            .trigger('mousemove', { clientX: x, clientY: y, force: true });
+            .as('boundaryEvent')
+            .click({ force: true })
+            .trigger('mousedown', { which: 1, force: true });
+          waitToRenderAllShapes();
+          cy.get('@boundaryEvent').trigger('mousemove', { clientX: x, clientY: y, force: true });
 
           waitToRenderAllShapes();
 
@@ -391,4 +368,4 @@ boundaryEventData.forEach(({ type, nodeType, eventXMLSnippet, taskType, taskType
       getElementAtPosition(boundaryEventPosition).click().children().should('have.class', 'joint-highlight-stroke');
     });
   });
-});
+}

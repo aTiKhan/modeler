@@ -23,12 +23,13 @@ import portsConfig from '@/mixins/portsConfig';
 import TaskShape from '@/components/nodes/task/shape';
 import { taskHeight } from '@/components/nodes/task/taskConfig';
 import store from '@/store';
-import uniqBy from 'lodash/uniqBy';
 import hasMarkers, { markerSize } from '@/mixins/hasMarkers';
 import hideLabelOnDrag from '@/mixins/hideLabelOnDrag';
-import { elementIdParser } from '@/components/nodes/subProcess/elementIdParser';
 import CrownConfig from '@/components/crown/crownConfig/crownConfig';
 import highlightConfig from '@/mixins/highlightConfig';
+import defaultNames from '@/components/nodes/task/defaultNames';
+import boundaryEventDropdownData from '@/components/nodes/boundaryEvent/boundaryEventDropdownData';
+
 const labelPadding = 15;
 const topAndBottomMarkersSpace = 2 * markerSize;
 
@@ -52,41 +53,25 @@ export default {
   mixins: [highlightConfig, portsConfig, hasMarkers, hideLabelOnDrag],
   data() {
     return {
-      boundaryEventDropdownData: [
-        {
-          label: 'Boundary Timer Event',
-          nodeType: 'processmaker-modeler-boundary-timer-event',
-          dataTest: 'add-boundary-timer-event',
-        },
-        {
-          label: 'Boundary Error Event',
-          nodeType: 'processmaker-modeler-boundary-error-event',
-          dataTest: 'add-boundary-error-event',
-        },
-        {
-          label: 'Boundary Message Event',
-          nodeType: 'processmaker-modeler-boundary-message-event',
-          dataTest: 'add-boundary-message-event',
-        },
-      ],
+      boundaryEventDropdownData,
       dropdownData: [
         {
-          label: 'Task',
+          label: defaultNames['processmaker-modeler-task'],
           nodeType: 'processmaker-modeler-task',
           dataTest: 'switch-to-user-task',
         },
         {
-          label: 'Manual Task',
+          label: defaultNames['processmaker-modeler-manual-task'],
           nodeType: 'processmaker-modeler-manual-task',
           dataTest: 'switch-to-manual-task',
         },
         {
-          label: 'Script Task',
+          label: defaultNames['processmaker-modeler-script-task'],
           nodeType: 'processmaker-modeler-script-task',
           dataTest: 'switch-to-script-task',
         },
         {
-          label: 'Sub Process',
+          label: defaultNames['processmaker-modeler-call-activity'],
           nodeType: 'processmaker-modeler-call-activity',
           dataTest: 'switch-to-sub-process',
         },
@@ -109,26 +94,11 @@ export default {
         this.recalcMarkersAlignment();
       }
     },
-    'node.definition.calledElement'(calledElement) {
-      if (!calledElement) {
-        return;
-      }
-
-      const { ownerProcessId, processId } = elementIdParser(calledElement);
-
-      const calledSubProcess = store.getters.globalProcesses
-        .find(process => process.id == processId);
-
-      let calledElementName = calledSubProcess.name;
-      if (uniqBy(calledSubProcess.events, 'ownerProcessName').length > 1) {
-        const calledSubProcess = calledSubProcess.events.find(event => event.ownerProcessId == ownerProcessId);
-        calledElementName += ` (${calledSubProcess.ownerProcessName})`;
-      }
-
+    'node.definition.config'(config) {
       store.commit('updateNodeProp', {
         node: this.node,
-        key: 'name',
-        value: calledElementName,
+        key: 'config',
+        value: config,
       });
       this.$emit('save-state');
     },
