@@ -71,7 +71,7 @@
         :node="node"
         :id="node.id"
         :highlighted="highlightedNodes.includes(node)"
-        :has-error="invalidNodes.includes(node.id)"
+        :has-error="invalidNodes.includes(node)"
         :border-outline="borderOutline(node.id)"
         :collaboration="collaboration"
         :process-node="processNode"
@@ -84,6 +84,7 @@
         :paperManager="paperManager"
         :auto-validate="autoValidate"
         :is-active="node === activeNode"
+        :node-id-generator="nodeIdGenerator"
         @add-node="addNode"
         @remove-node="removeNode"
         @set-cursor="cursor = $event"
@@ -95,6 +96,7 @@
         @set-shape-stacking="setShapeStacking"
         @setTooltip="tooltipTarget = $event"
         @replace-node="replaceNode"
+        @replace-generic-flow="replaceGenericFlow"
         @copy-element="copyElement"
         @default-flow="toggleDefaultFlow"
       />
@@ -104,6 +106,7 @@
 
 <script>
 import Vue from 'vue';
+import _ from 'lodash';
 import { dia } from 'jointjs';
 import boundaryEventConfig from '../nodes/boundaryEvent';
 import BpmnModdle from 'bpmn-moddle';
@@ -120,15 +123,17 @@ import Process from '../inspectors/process';
 import runningInCypressTest from '@/runningInCypressTest';
 import getValidationProperties from '@/targetValidationUtils';
 import MiniPaper from '@/components/miniPaper/MiniPaper';
-import { id as laneId } from '../nodes/poolLane';
+import { id as laneId } from '@/components/nodes/poolLane/config';
 import { id as sequenceFlowId } from '../nodes/sequenceFlow';
 import { id as associationId } from '../nodes/association';
-import { id as messageFlowId } from '../nodes/messageFlow';
+import { id as messageFlowId } from '../nodes/messageFlow/config';
+import { id as dataOutputAssociationFlowId } from '../nodes/dataOutputAssociation/config';
+import { id as dataInputAssociationFlowId } from '../nodes/dataInputAssociation/config';
+import { id as genericFlowId } from '@/components/nodes/genericFlow/config';
 
 import PaperManager from '../paperManager';
 import registerInspectorExtension from '@/components/InspectorExtensionManager';
 
-import initAnchor from '@/mixins/linkManager.js';
 import ensureShapeIsNotCovered from '@/components/shapeStackUtils';
 import ToolBar from '@/components/toolbar/ToolBar';
 import Node from '@/components/nodes/node';
@@ -138,8 +143,11 @@ import setUpSelectionBox from '@/components/modeler/setUpSelectionBox';
 import TimerEventNode from '@/components/nodes/timerEventNode';
 import focusNameInputAndHighlightLabel from '@/components/modeler/focusNameInputAndHighlightLabel';
 import XMLManager from '@/components/modeler/XMLManager';
-import { removeOutgoingAndIncomingRefsToFlow } from '@/components/crown/utils';
-import { getAssociationFlowsForNode, keepOriginalName } from '@/components/modeler/modelerUtils';
+import { removeOutgoingAndIncomingRefsToFlow, removeBoundaryEvents, removeSourceDefault, removePoolElements } from '@/components/crown/utils';
+import { getInvalidNodes } from '@/components/modeler/modelerUtils';
+import { NodeMigrator } from '@/components/modeler/NodeMigrator';
+
+import ProcessmakerModelerGenericFlow from '@/components/nodes/genericFlow/genericFlow';
 
 export default {
   components: {
@@ -147,6 +155,7 @@ export default {
     controls,
     InspectorPanel,
     MiniPaper,
+    ProcessmakerModelerGenericFlow,
   },
   props: {
     owner: Object,
@@ -247,8 +256,7 @@ export default {
     highlightedNode: () => store.getters.highlightedNodes[0],
     highlightedNodes: () => store.getters.highlightedNodes,
     invalidNodes() {
-      return Object.entries(this.validationErrors)
-        .flatMap(([, errors]) => errors.map(error => error.id));
+      return getInvalidNodes(this.validationErrors, this.nodes);
     },
   },
   methods: {
@@ -318,10 +326,15 @@ export default {
       }
     },
     async pushToUndoStack() {
-      const xml = await this.getXmlFromDiagram();
-      undoRedoStore.dispatch('pushState', xml);
+      try {
+        const xml = await this.getXmlFromDiagram();
+        undoRedoStore.dispatch('pushState', xml);
 
-      window.ProcessMaker.EventBus.$emit('modeler-change');
+        window.ProcessMaker.EventBus.$emit('modeler-change');
+      } catch (invalidXml) {
+        // eslint-disable-next-line no-console
+        console.warn(invalidXml.message);
+      }
     },
     getXmlFromDiagram() {
       return new Promise((resolve, reject) => {
@@ -374,12 +387,22 @@ export default {
       this.collaboration = null;
     },
     highlightNode(node, event) {
+      if (!node || !this.highlightedNode) {
+        return;
+      }
+
       if (event && event.shiftKey) {
         store.commit('addToHighlightedNodes', [node]);
         return;
       }
 
-      store.commit('highlightNode', node);
+      let isSameHighlightedNode = _.isEqual(node.id, this.highlightedNode.id);
+
+      if (!isSameHighlightedNode) {
+        store.commit('highlightNode', node);  
+      }
+
+      return;
     },
     blurFocusedScreenBuilderElement() {
       const elementsToBlur = ['INPUT', 'SELECT'];
@@ -430,7 +453,7 @@ export default {
 
       types.forEach(bpmnType => {
         if (!this.parsers[bpmnType]) {
-          this.parsers[bpmnType] = { custom: [], implementation: [], default: [] };
+          this.parsers[bpmnType] = { custom: [], implementation: [], default: []};
         }
 
         if (customParser) {
@@ -458,6 +481,25 @@ export default {
       artifacts
         .filter(definition => definition.$type === 'bpmn:Association' && this.hasSourceAndTarget(definition))
         .forEach(definition => this.setNode(definition, flowElements, artifacts));
+    },
+    loadDataAssociations(flowElements) {
+      const tasksThatHaveDataOutputAssociations = flowElements.filter(task => task.get('dataOutputAssociations') &&
+          task.get('dataOutputAssociations').length > 0);
+
+      tasksThatHaveDataOutputAssociations.forEach(task => {
+        task.get('dataOutputAssociations').forEach(dataAssociationLink => {
+          this.setNode(dataAssociationLink, flowElements);
+        });
+      });
+
+      const tasksThatHaveDataInputAssociations = flowElements.filter(task => task.get('dataInputAssociations') &&
+          task.get('dataInputAssociations').length > 0);
+
+      tasksThatHaveDataInputAssociations.forEach(task => {
+        task.get('dataInputAssociations').forEach(dataAssociationLink => {
+          this.setNode(dataAssociationLink, flowElements);
+        });
+      });
     },
     loadArtifacts(flowElements, artifacts) {
       artifacts
@@ -498,6 +540,7 @@ export default {
         this.loadSequenceFlows(flowElements, artifacts);
         this.loadArtifacts(flowElements, artifacts);
         this.loadAssociations(flowElements, artifacts);
+        this.loadDataAssociations(flowElements);
       });
 
       store.commit('setRootElements', this.definitions.rootElements);
@@ -588,7 +631,7 @@ export default {
       this.removeUnsupportedElementAttributes(definition);
       const type = parser(definition, this.moddle);
 
-      const unnamedElements = ['bpmn:TextAnnotation', 'bpmn:Association'];
+      const unnamedElements = ['bpmn:TextAnnotation', 'bpmn:Association', 'bpmn:DataOutputAssociation', 'bpmn:DataInputAssociation'];
       const requireName = unnamedElements.indexOf(bpmnType) === -1;
       if (requireName && !definition.get('name')) {
         definition.set('name', '');
@@ -698,55 +741,15 @@ export default {
         return;
       }
 
-      if (keepOriginalName(nodeThatWillBeReplaced)) {
-        definition.name = nodeThatWillBeReplaced.definition.name;
-      }
-
-      const forceNodeToRemount = definition => {
-        const shape = this.graph.getLinks().find(element => {
-          return element.component && element.component.node.definition === definition;
-        });
-        shape.component.node._modelerId += '_replaced';
-      };
-
-      const incoming = nodeThatWillBeReplaced.definition.get('incoming');
-      const outgoing = nodeThatWillBeReplaced.definition.get('outgoing');
-
-      definition.get('incoming').push(...incoming);
-      definition.get('outgoing').push(...outgoing);
-
-      outgoing.forEach(ref => {
-        ref.set('sourceRef', newNode.definition);
-        forceNodeToRemount(ref);
-      });
-
-      incoming.forEach(ref => {
-        ref.set('targetRef', newNode.definition);
-        forceNodeToRemount(ref);
-      });
-
-      const associationFlows = getAssociationFlowsForNode(nodeThatWillBeReplaced, this.processes);
-      associationFlows.forEach(flow => {
-        flow.set('targetRef', newNode.definition);
-        forceNodeToRemount(flow);
-      });
-
-      if (this.collaboration) {
-        const messageFlows = this.collaboration.get('messageFlows');
-        messageFlows
-          .filter(flow => flow.sourceRef === nodeThatWillBeReplaced.definition)
-          .forEach(flow => {
-            flow.set('sourceRef', newNode.definition);
-            forceNodeToRemount(flow);
-          });
-
-        messageFlows
-          .filter(flow => flow.targetRef === nodeThatWillBeReplaced.definition)
-          .forEach(flow => {
-            flow.set('targetRef', newNode.definition);
-            forceNodeToRemount(flow);
-          });
-      }
+      const nodeMigrator = new NodeMigrator(
+        nodeThatWillBeReplaced,
+        definition,
+        this.graph,
+        newNode,
+        this.processes,
+        this.collaboration,
+      );
+      nodeMigrator.migrate();
 
       return newNode;
     },
@@ -755,7 +758,9 @@ export default {
       diagram.bounds.y -= (diagram.bounds.height / 2);
     },
     addNode(node) {
-      node.pool = this.poolTarget;
+      if (!node.pool) {
+        node.pool = this.poolTarget;
+      }
 
       const targetProcess = node.getTargetProcess(this.processes, this.processNode);
       addNodeToProcess(node, targetProcess);
@@ -765,7 +770,16 @@ export default {
       store.commit('addNode', node);
       this.poolTarget = null;
 
-      if ([sequenceFlowId, laneId, associationId, messageFlowId].includes(node.type)) {
+      // add processmaker-modeler-generic-flow
+      if ([
+        sequenceFlowId,
+        laneId,
+        associationId,
+        messageFlowId,
+        dataOutputAssociationFlowId,
+        dataInputAssociationFlowId,
+        genericFlowId,
+      ].includes(node.type)) {
         return;
       }
 
@@ -778,6 +792,9 @@ export default {
     },
     async removeNode(node) {
       removeOutgoingAndIncomingRefsToFlow(node);
+      removeBoundaryEvents(this.graph, node, this.removeNode);
+      removeSourceDefault(node);
+      removePoolElements(this.graph, node, this.removeNode);
 
       this.removeNodeFromLane(node);
       store.commit('removeNode', node);
@@ -787,15 +804,29 @@ export default {
     },
     replaceNode({ node, typeToReplaceWith }) {
       this.performSingleUndoRedoTransaction(async() => {
-        const { x: clientX, y: clientY } = this.paper.localToClientPoint(node.diagram.bounds);
-        const newNode = await this.handleDrop({
-          clientX, clientY,
-          control: { type: typeToReplaceWith },
-          nodeThatWillBeReplaced: node,
-        });
+        await this.paperManager.performAtomicAction(async() => {
+          const { x: clientX, y: clientY } = this.paper.localToClientPoint(node.diagram.bounds);
+          const newNode = await this.handleDrop({
+            clientX, clientY,
+            control: { type: typeToReplaceWith },
+            nodeThatWillBeReplaced: node,
+          });
 
-        await this.removeNode(node);
-        this.highlightNode(newNode);
+          await this.removeNode(node);
+          this.highlightNode(newNode);
+        });
+      });
+    },
+    replaceGenericFlow({ actualFlow, genericFlow, targetNode }) {
+      this.performSingleUndoRedoTransaction(async() => {
+        await this.paperManager.performAtomicAction(async() => {
+          await this.highlightNode(null);
+          await this.$nextTick();
+          await this.addNode(actualFlow);
+          await store.commit('removeNode', genericFlow);
+          await this.$nextTick();
+          await this.highlightNode(targetNode);
+        });
       });
     },
     async performSingleUndoRedoTransaction(cb) {
@@ -954,8 +985,6 @@ export default {
       this.setShapeStacking(shape);
       this.activeNode = shape.component.node;
     });
-
-    initAnchor();
 
     let cursor;
     const setCursor = () => {

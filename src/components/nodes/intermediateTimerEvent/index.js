@@ -2,6 +2,7 @@ import component from './intermediateTimerEvent.vue';
 import IntermediateTimer from '../../inspectors/IntermediateTimer.vue';
 import nameConfigSettings from '@/components/inspectors/nameConfigSettings';
 import advancedAccordionConfig from '@/components/inspectors/advancedAccordionConfig';
+import documentationAccordionConfig from '@/components/inspectors/documentationAccordionConfig';
 import defaultNames from '@/components/nodes/intermediateEvent/defaultNames';
 
 export const defaultDurationValue = 'PT1H';
@@ -15,7 +16,7 @@ export default {
   category: 'BPMN',
   icon: require('@/assets/toolpanel/generic-intermediate-event.svg'),
   label: 'Intermediate Event',
-  rank: 2,
+  rank: 20,
   definition(moddle, $t) {
     return moddle.create('bpmn:IntermediateCatchEvent', {
       name: $t(defaultNames[id]),
@@ -92,7 +93,7 @@ export default {
             initiallyOpen: true,
             label: 'Configuration',
             icon: 'cog',
-            name: 'inspector-accordion',
+            name: 'inspector-accordion-intermediate-timer-config',
           },
           items: [
             {
@@ -107,7 +108,7 @@ export default {
           config: {
             label: 'Timing Control',
             icon: 'clock',
-            name: 'inspector-accordion',
+            name: 'inspector-accordion-intermediate-timer-event-timing-control',
           },
           items: [
             {
@@ -120,6 +121,7 @@ export default {
             },
           ],
         },
+        documentationAccordionConfig,
         advancedAccordionConfig,
       ],
     },

@@ -1,6 +1,7 @@
 import {
   addNodeTypeToPaper,
   assertDownloadedXmlContainsExpected,
+  assertDownloadedXmlContainsSubstringNTimes,
   dragFromSourceToDest,
   getElementAtPosition,
   typeIntoTextInput,
@@ -132,5 +133,22 @@ describe('Copy element', () => {
 
     assertDownloadedXmlContainsExpected(process);
 
+  });
+
+  it('only creates a single new node on copy if you have multiple pools', () => {
+    const firstPoolPosition = { x: 100, y: 150 };
+    const secondPoolPosition = { x: 100, y: 450 };
+
+    dragFromSourceToDest(nodeTypes.pool, firstPoolPosition);
+    waitToRenderAllShapes();
+    dragFromSourceToDest(nodeTypes.pool, secondPoolPosition);
+
+    const taskInSecondPoolPosition = {x: 150, y: 500};
+    dragFromSourceToDest(nodeTypes.task, taskInSecondPoolPosition);
+
+    cy.get('[data-test="copy-button"]').click();
+    waitToRenderAllShapes();
+
+    assertDownloadedXmlContainsSubstringNTimes('<bpmn:task', 2, 'Expect exactly two tasks after copying one');
   });
 });

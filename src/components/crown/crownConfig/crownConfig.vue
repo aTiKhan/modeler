@@ -10,7 +10,7 @@
       @toggle-crown-state="showCrown = $event"
     />
 
-    <sequence-flow-button
+    <generic-flow-button
       :node="node"
       :node-registry="nodeRegistry"
       :moddle="moddle"
@@ -18,7 +18,7 @@
       @toggle-crown-state="showCrown = $event"
     />
 
-    <message-flow-button
+    <data-association-flow-button
       :node="node"
       :moddle="moddle"
       :shape="shape"
@@ -39,6 +39,8 @@
       :moddle="moddle"
       :shape="shape"
       :task-dropdown-initially-open="taskDropdownInitiallyOpen"
+      :showCustomIconPicker="showCustomIconPicker"
+      :iconName="iconName"
       @replace-node-type="replaceNodeTypePrompt"
       v-on="$listeners"
     />
@@ -56,6 +58,7 @@
     />
 
     <b-modal
+      :no-fade="runningInCypressTest"
       id="modal-prevent-closing"
       ref="modal"
       :title="$t('Change Type')"
@@ -72,9 +75,9 @@
 
 <script>
 import DeleteButton from '@/components/crown/crownButtons/deleteButton';
-import MessageFlowButton from '@/components/crown/crownButtons/messageFlowButton';
-import SequenceFlowButton from '@/components/crown/crownButtons/sequenceFlowButton';
+import GenericFlowButton from '@/components/crown/crownButtons/genericFlowButton';
 import AssociationFlowButton from '@/components/crown/crownButtons/associationFlowButton';
+import DataAssociationFlowButton from '@/components/crown/crownButtons/dataAssociationFlowButton';
 import CopyButton from '@/components/crown/crownButtons/copyButton.vue';
 import CrownDropdowns from '@/components/crown/crownButtons/crownDropdowns';
 import DefaultFlow from '@/components/crown/crownButtons/defaultFlowButton.vue';
@@ -83,16 +86,17 @@ import pull from 'lodash/pull';
 import store from '@/store';
 import isEqual from 'lodash/isEqual';
 import { getDefaultNodeColors, setShapeColor } from '@/components/nodeColors';
+import runningInCypressTest from '@/runningInCypressTest';
 
 export default {
   components: {
     CrownDropdowns,
     DeleteButton,
-    MessageFlowButton,
-    SequenceFlowButton,
+    GenericFlowButton,
     AssociationFlowButton,
     CopyButton,
     DefaultFlow,
+    DataAssociationFlowButton,
   },
   props: {
     highlighted: Boolean,
@@ -113,6 +117,14 @@ export default {
     boundaryEventDropdownData: {
       type: Array,
       default: () => [],
+    },
+    showCustomIconPicker: {
+      type: Boolean,
+      default: false,
+    },
+    iconName: {
+      type: String,
+      default: '',
     },
   },
   mixins: [poolLaneCrownConfig],
@@ -143,6 +155,7 @@ export default {
   },
   data() {
     return {
+      runningInCypressTest: runningInCypressTest(),
       showCrown: false,
       savePositionOnPointerupEventSet: false,
       style: null,

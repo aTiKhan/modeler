@@ -88,13 +88,23 @@ export default class Node {
     const clonedNode = new this.constructor(this.type, definition, diagram);
 
     clonedNode.id = null;
+    clonedNode.pool = this.pool;
     Node.diagramPropertiesToCopy.forEach(prop => clonedNode.diagram.bounds[prop] = this.diagram.bounds[prop]);
     Object.keys(this.definition).filter(key => !Node.definitionPropertiesToNotCopy.includes(key)).forEach(key => {
       const definition = this.definition.get(key);
-      clonedNode.definition.set(key, typeof definition === 'object' ? cloneDeep(definition) : definition);
+      const clonedDefinition = typeof definition === 'object' ? cloneDeep(definition) : definition;
+      if (key === 'eventDefinitions') {
+        for (var i in clonedDefinition) {
+          if (definition[i].signalRef && !clonedDefinition[i].signalRef) {
+            clonedDefinition[i].signalRef = { ...definition[i].signalRef };
+          }
+        }
+      }
+      clonedNode.definition.set(key, clonedDefinition);
     });
     Node.eventDefinitionPropertiesToNotCopy.forEach(
       prop => clonedNode.definition.eventDefinitions &&
+        clonedNode.definition.eventDefinitions[0] &&
         clonedNode.definition.eventDefinitions[0].hasOwnProperty(prop) &&
         clonedNode.definition.eventDefinitions[0].set(prop, null)
     );

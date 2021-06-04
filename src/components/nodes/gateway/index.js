@@ -1,6 +1,7 @@
 import component from './gateway.vue';
 import idConfigSettings from '@/components/inspectors/idConfigSettings';
 import advancedAccordionConfig from '@/components/inspectors/advancedAccordionConfig';
+import documentationAccordionConfig from '@/components/inspectors/documentationAccordionConfig';
 
 export default {
   id: 'processmaker-modeler-gateway',
@@ -33,7 +34,7 @@ export default {
             initiallyOpen: true,
             label: 'Configuration',
             icon: 'cog',
-            name: 'inspector-accordion',
+            name: 'inspector-accordion-gateway',
           },
           items: [
             {
@@ -50,6 +51,7 @@ export default {
             },
           ],
         },
+        documentationAccordionConfig,
         advancedAccordionConfig,
       ],
     },

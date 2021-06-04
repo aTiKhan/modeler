@@ -12,7 +12,7 @@
         :style="{ height: parentHeight }"
       >
         <vue-form-renderer
-          :key="config[0].name"
+          :key="highlightedNode._modelerId"
           v-if="highlightedNode"
           :data="data"
           @update="updateDefinition"
@@ -29,7 +29,7 @@
 <script>
 import Vue from 'vue';
 
-import { renderer, VueFormRenderer } from '@processmaker/screen-builder';
+import { renderer } from '@processmaker/screen-builder';
 
 import {
   FormAccordion,
@@ -59,13 +59,14 @@ Vue.component('FormCheckbox', FormCheckbox);
 Vue.component('FormRadioButtonGroup', FormRadioButtonGroup);
 Vue.component('FormAccordion', FormAccordion);
 Vue.component('FormDatePicker', FormDatePicker);
-Vue.component('VueFormRenderer', VueFormRenderer);
 Vue.component('FormMultiSelect', FormMultiSelect);
 
 export default {
   props: ['nodeRegistry', 'moddle', 'processNode', 'parentHeight', 'canvasDragPosition', 'compressed', 'definitions'],
   data() {
     return {
+      data: {},
+      config: [],
       inspectorHandler: null,
       translated: [],
     };
@@ -73,45 +74,19 @@ export default {
   watch: {
     highlightedNode() {
       document.activeElement.blur();
+      this.prepareData();
+      this.prepareConfig();
     },
+    'highlightedNode.definition.assignment'(current, previous) { this.handleAssignmentChanges(current, previous); },
+    'highlightedNode.definition.assignmentLock'(current, previous) { this.handleAssignmentChanges(current, previous); },
+    'highlightedNode.definition.allowReassignment'(current, previous) { this.handleAssignmentChanges(current, previous); },
+    'highlightedNode.definition.assignedUsers'(current, previous) { this.handleAssignmentChanges(current, previous); },
+    'highlightedNode.definition.assignedGroups'(current, previous) { this.handleAssignmentChanges(current, previous); },
+    'highlightedNode.definition.assignmentRules'(current, previous) { this.handleAssignmentChanges(current, previous); },
   },
   computed: {
     highlightedNode() {
       return store.getters.highlightedNodes[0];
-    },
-    config() {
-      if (!this.highlightedNode) {
-        return {
-          name: 'Empty',
-          items: [],
-        };
-      }
-
-      const { type, definition } = this.highlightedNode;
-
-      if (this.highlightedNode === this.processNode) {
-        return Process.inspectorConfig;
-      }
-
-      const inspectorConfig = cloneDeep(this.nodeRegistry[type].inspectorConfig);
-      const sequenceFlowConfigurationFormElements = get(inspectorConfig, '[0].items[0].items');
-
-      if (this.isSequenceFlow(type) && this.isConnectedToGateway(definition)) {
-        let helper = 'Enter the expression that describes the workflow condition ';
-        helper += '<a href="https://processmaker.gitbook.io/processmaker/designing-processes/process-design/model-your-process/the-quick-toolbar#expression-syntax-components" target="_blank"><i class="far fa-question-circle mr-1"></a>';
-        const expressionConfig = {
-          component: 'FormInput',
-          config: {
-            label: 'Expression',
-            helper,
-            name: 'conditionExpression',
-          },
-        };
-
-        sequenceFlowConfigurationFormElements.push(expressionConfig);
-      }
-
-      return inspectorConfig;
     },
     isAnyNodeActive() {
       return this.highlightedNode;
@@ -132,6 +107,9 @@ export default {
       }
 
       return value => {
+        if (!value) {
+          return;
+        }
         if (isString(value.documentation) && get(this.highlightedNode.definition.get('documentation')[0], 'text') !== value.documentation) {
 
           const documentation = value.documentation
@@ -150,23 +128,74 @@ export default {
     isProcessNodeActive() {
       return this.highlightedNode === this.processNode;
     },
-    data() {
+  },
+  methods: {
+    handleAssignmentChanges(currentValue, previousValue) {
+      if (currentValue === previousValue) {
+        return;
+      }
+      this.prepareData();
+    },
+    prepareConfig() {
+      if (!this.highlightedNode) {
+        return this.config = {
+          name: 'Empty',
+          items: [],
+        };
+      }
+
+      const { type, definition } = this.highlightedNode;
+
+      if (this.highlightedNode === this.processNode) {
+        return this.config = Process.inspectorConfig;
+      }
+
+      const inspectorConfig = cloneDeep(this.nodeRegistry[type].inspectorConfig);
+      const sequenceFlowConfigurationFormElements = get(inspectorConfig, '[0].items[0].items');
+
+      if (this.isSequenceFlow(type) && this.isConnectedToGateway(definition)) {
+        let helper = this.$t('Enter the expression that describes the workflow condition');
+        helper += ' <a href="https://processmaker.gitbook.io/processmaker/designing-processes/process-design/model-your-process/the-quick-toolbar#expression-syntax-components" target="_blank"><i class="far fa-question-circle mr-1"></a>';
+        const expressionConfig = {
+          component: 'FormInput',
+          config: {
+            label: this.$t('Expression'),
+            helper,
+            name: 'conditionExpression',
+          },
+        };
+
+        // Always move the Expression Field below the Name field in the inspector
+        const nameField = sequenceFlowConfigurationFormElements.find(x => x.config && x.config.label === 'Name');
+        const nameFieldIndex = sequenceFlowConfigurationFormElements.indexOf(nameField);
+        if (nameField && nameFieldIndex >= 0) {
+          sequenceFlowConfigurationFormElements.splice(nameFieldIndex + 1, 0, expressionConfig);
+        }
+        else {
+          sequenceFlowConfigurationFormElements.push(expressionConfig);
+        }
+
+      }
+
+      return this.config = inspectorConfig;
+    },
+    prepareData() {
       if (!this.highlightedNode) {
         return {};
       }
 
       const type = this.highlightedNode && this.highlightedNode.type;
 
-      return type && this.nodeRegistry[type].inspectorData
-        ? this.nodeRegistry[type].inspectorData(this.highlightedNode)
-        : Object.entries(this.highlightedNode.definition).reduce((data, [key, value]) => {
-          data[key] = value;
+      const defaultDataTransform = (node) => Object.entries(node.definition).reduce((data, [key, value]) => {
+        data[key] = value;
 
-          return data;
-        }, {});
+        return data;
+      }, {});
+
+      this.data = type && this.nodeRegistry[type].inspectorData
+        ? this.nodeRegistry[type].inspectorData(this.highlightedNode, defaultDataTransform, this)
+        : defaultDataTransform(this.highlightedNode);
     },
-  },
-  methods: {
     isSequenceFlow(type) {
       return type === sequenceFlowId;
     },
@@ -177,7 +206,7 @@ export default {
       return definition.targetRef.$type === 'bpmn:CallActivity';
     },
     customInspectorHandler(value) {
-      return this.nodeRegistry[this.highlightedNode.type].inspectorHandler(value, this.highlightedNode, this.setNodeProp, this.moddle, this.definitions);
+      return this.nodeRegistry[this.highlightedNode.type].inspectorHandler(value, this.highlightedNode, this.setNodeProp, this.moddle, this.definitions, this.defaultInspectorHandler);
     },
     processNodeInspectorHandler(value) {
       return this.defaultInspectorHandler(omit(value, ['artifacts', 'flowElements', 'laneSets']));

@@ -1,6 +1,7 @@
 import component from '@/components/nodes/intermediateEvent/intermediateEvent.vue';
 import nameConfigSettings from '@/components/inspectors/nameConfigSettings';
 import advancedAccordionConfig from '@/components/inspectors/advancedAccordionConfig';
+import documentationAccordionConfig from '@/components/inspectors/documentationAccordionConfig';
 
 export default {
   id: 'processmaker-modeler-intermediate-event',
@@ -35,7 +36,7 @@ export default {
             initiallyOpen: true,
             label: 'Configuration',
             icon: 'cog',
-            name: 'inspector-accordion',
+            name: 'inspector-accordion-intermediate-gateway-config',
           },
           items: [
             {
@@ -44,6 +45,7 @@ export default {
             },
           ],
         },
+        documentationAccordionConfig,
         advancedAccordionConfig,
       ],
     },

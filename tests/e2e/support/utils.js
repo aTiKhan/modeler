@@ -1,9 +1,25 @@
-import { saveDebounce } from '../../../src/components/inspectors/inspectorConstants';
+import {saveDebounce} from '../../../src/components/inspectors/inspectorConstants';
 import path from 'path';
-import { boundaryEventSelector, nodeTypes, taskSelector } from './constants';
-import { gridSize } from '../../../src/graph';
+import {boundaryEventSelector, nodeTypes, taskSelector} from './constants';
+import {gridSize} from '../../../src/graph';
 
 const renderTime = 300;
+
+export function getTinyMceEditor() {
+  return cy
+    .get('iframe#documentation-editor_ifr')
+    .its('0.contentDocument')
+    .its('body')
+    .then(cy.wrap);
+}
+
+export function getTinyMceEditorInModal() {
+  return cy
+    .get('iframe#documentation-editor-modal_ifr')
+    .its('0.contentDocument')
+    .its('body')
+    .then(cy.wrap);
+}
 
 export function setBoundaryEvent(nodeType, taskPosition, taskType = nodeTypes.task) {
   const dataTest = nodeType.replace('processmaker-modeler-', 'add-');
@@ -123,6 +139,10 @@ export function waitToRenderAllShapes() {
   cy.wait(renderTime);
 }
 
+export function waitForAnimations() {
+  cy.wait(renderTime);
+}
+
 export function waitToRenderNodeUpdates() {
   cy.wait(saveDebounce);
 }
@@ -209,6 +229,19 @@ export function removeIndentationAndLinebreaks(string) {
   return string.replace(/(^\s+)|(\n)/gim, '');
 }
 
+export function removeElementAtPosition(elementPosition) {
+  getElementAtPosition(elementPosition)
+    .click()
+    .then($el => {
+      return getCrownButtonForElement($el, 'delete-button');
+    })
+    .click();
+}
+
+export function removeStartEvent(startEventPosition = {x: 150, y: 150}) {
+  removeElementAtPosition(startEventPosition);
+}
+
 export const modalAnimationTime = 300;
 
 export function uploadXml(filepath) {
@@ -219,16 +252,14 @@ export function uploadXml(filepath) {
 
   cy.fixture(filepath, 'base64').then(bpmnProcess => {
     return cy.get('input[type=file]').then($input => {
-      return Cypress.Blob.base64StringToBlob(bpmnProcess, 'text/xml')
-        .then((blob) => {
-          const file = new File([blob], path.basename(filepath), { type: 'text/xml' });
-          const dataTransfer = new DataTransfer();
-          dataTransfer.items.add(file);
-          const input = $input[0];
-          input.files = dataTransfer.files;
-          cy.wrap(input).trigger('change', { force: true });
-          return cy.get('#uploadmodal button').contains('Upload').click();
-        });
+      const blob = Cypress.Blob.base64StringToBlob(bpmnProcess, 'text/xml');
+      const file = new File([blob], path.basename(filepath), { type: 'text/xml' });
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      const input = $input[0];
+      input.files = dataTransfer.files;
+      cy.wrap(input).trigger('change', { force: true });
+      return cy.get('#uploadmodal button').contains('Upload').click();
     });
   });
 
@@ -236,14 +267,14 @@ export function uploadXml(filepath) {
   cy.wait(modalAnimationTime);
 }
 
-export function testNumberOfVertices(numberOfVertices) {
+export function testNumberOfVertices(expectedVertices) {
   cy.window()
     .its('store.state')
     .then(state => {
       const { graph, paper } = state;
-      const link = graph.getLinks()[0];
-      const waypoints = link.findView(paper).getConnection().segments;
-      expect(waypoints).to.have.length(numberOfVertices);
+      const firstLink = graph.getLinks()[0];
+      const waypoints = firstLink.findView(paper).getConnection().segments;
+      expect(waypoints.length).to.equal(expectedVertices, `We should have ${expectedVertices} waypoints`);
 
       if (Cypress.env('inProcessmaker')) {
         return;
@@ -256,14 +287,14 @@ export function testNumberOfVertices(numberOfVertices) {
         .then(xml => {
           const waypoints = xml.match(/<di:waypoint x="\d+(?:\.\d+)?" y="\d+(?:\.\d+)?" \/>/gim);
 
-          const numberOfCustomVertices = link.vertices().length;
+          const numberOfCustomVertices = firstLink.vertices().length;
           const hasCustomVertices = numberOfCustomVertices > 0;
           const numberOfStartAndEndVertices = 2;
 
           if (hasCustomVertices) {
-            expect(waypoints).to.have.length(numberOfStartAndEndVertices + numberOfCustomVertices);
+            expect(waypoints.length).to.equal(numberOfStartAndEndVertices + numberOfCustomVertices, `Expected ${numberOfStartAndEndVertices + numberOfCustomVertices} custom di:waypoints in the downloaded XML`);
           } else {
-            expect(waypoints).to.have.length(numberOfStartAndEndVertices);
+            expect(waypoints.length).to.equal(numberOfStartAndEndVertices, `Expected ${numberOfStartAndEndVertices} (just start + end) vertices in the downloaded XML`);
           }
         });
     });
@@ -273,6 +304,24 @@ export function getNumberOfLinks() {
   return cy.window()
     .its('store.state')
     .then(({ graph }) => graph.getLinks().length);
+}
+
+export function assertElementsAreConnected(connectedFromId, connectedToId) {
+  return cy.window()
+    .its('store.state')
+    .then(({ graph }) => {
+      const linkFound = graph.getLinks().some((link) => {
+        return link.getSourceElement().component.node.definition.id === connectedFromId
+          && link.getTargetElement().component.node.definition.id === connectedToId;
+      });
+
+      let message = `Link should be from '${connectedFromId}' to '${connectedToId}'`;
+      if (!linkFound) {
+        message = `No link found from '${connectedFromId}' to '${connectedToId}'`;
+      }
+
+      expect(linkFound, message).to.be.true;
+    });
 }
 
 export function getXml() {
@@ -296,6 +345,13 @@ export function assertDownloadedXmlDoesNotContainExpected(xmlString) {
   });
 }
 
+export function assertDownloadedXmlContainsSubstringNTimes(substring, expectedCount, message) {
+  getXml().then(xml => {
+    const matches = xml.match(new RegExp(substring, 'g'));
+    expect(matches).to.have.lengthOf(expectedCount, message);
+  });
+}
+
 export function assertBoundaryEventIsCloseToTask() {
   const positionErrorMargin = 30;
 
@@ -313,6 +369,7 @@ export function addNodeTypeToPaper(nodePosition, genericNode, nodeToSwitchTo) {
   dragFromSourceToDest(genericNode, nodePosition);
   waitToRenderAllShapes();
   cy.get(`[data-test=${nodeToSwitchTo}]`).click();
+  cy.wait(300);
 }
 
 export function modalConfirm() {
@@ -321,4 +378,16 @@ export function modalConfirm() {
 
 export function modalCancel() {
   cy.get('.modal-footer .btn-secondary').click();
+}
+
+export function getPeriodicityStringUSFormattedDate(date, time = false) {
+  let year = date.getFullYear();
+  let month = (1 + date.getMonth()).toString().padStart(2, '0');
+  let day = date.getDate().toString().padStart(2, '0');
+  let dateString = month + '/' + day + '/' + year;
+  if (time) {
+    let timeString = date.toLocaleString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
+    dateString += ' ' + timeString;
+  }
+  return dateString;
 }

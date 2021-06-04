@@ -1,11 +1,11 @@
 <template>
   <div>
     <label class="typo__label">{{ label }}</label>
-    <div class="d-flex">
+    <div class="d-flex" :class="{invalid}">
       <multiselect
         :value="selectedOption"
         @input="change"
-        :placeholder="placeholder"
+        :placeholder="$t(placeholder)"
         :options="options"
         :multiple="multiple"
         :track-by="trackBy"
@@ -13,9 +13,10 @@
         :searchable="true"
         :internal-search="false"
         label="name"
-        @search-change="loadOptionsDebounced"
+        @search-change="loadOptions"
         @open="loadOptions"
         :data-test="`${name}:select`"
+        :disabled="!can('view-signals')"
       >
         <template slot="noResult">
           <slot name="noResult">{{ $t('Not found') }}</slot>
@@ -24,37 +25,43 @@
           <slot name="noOptions">{{ $t('No Data Available') }}</slot>
         </template>
       </multiselect>
-      <div class="btn-group ml-1" role="group">
-        <button type="button" class="btn btn-secondary btn-sm" @click="toggleConfigSignal">
+      <div class="btn-group ml-1" role="group" v-if="canEdit">
+        <button type="button" class="btn btn-secondary btn-sm" @click="toggleConfigSignal" data-cy="events-list">
           <i class="fa fa-ellipsis-h" />
         </button>
       </div>
     </div>
+    <div v-if="!can('view-signals')" class="invalid-feedback d-block"><div>
+      {{ $t('You do not have permission to view signals') }}
+    </div></div>
+    <div v-if="invalid" class="invalid-feedback d-block"><div>
+      {{ $t('Signal reference is required') }}
+    </div></div>
     <small v-if="helper" class="form-text text-muted">{{ $t(helper) }}</small>
     <div v-if="showNewSignal" class="card">
       <div class="card-body p-2">
-        <form-input :label="$t('ID')" v-model="signalId" :error="getValidationErrorForNewId(signalId)" />
-        <form-input :label="$t('Name')" v-model="signalName" :error="getValidationErrorForNewName(signalName)" />
+        <form-input :label="$t('ID')" v-model="signalId" :error="getValidationErrorForNewId(signalId)"  data-cy="events-add-id" />
+        <form-input :label="$t('Name')" v-model="signalName" :error="getValidationErrorForNewName(signalName)" data-cy="events-add-name" />
       </div>
       <div class="card-footer text-right p-2">
-        <button type="button" class="btn-special-assignment-action btn-special-assignment-close btn btn-outline-secondary btn-sm" @click="cancelAddSignal">
-          Cancel
+        <button type="button" class="btn-special-assignment-action btn-special-assignment-close btn btn-outline-secondary btn-sm" @click="cancelAddSignal" data-cy="events-cancel">
+          {{ $t('Cancel') }}
         </button>
-        <button :disabled="!validNew" type="button" class="btn-special-assignment-action btn btn-secondary btn-sm" @click="addSignal">
-          Save
+        <button :disabled="!validNew" type="button" class="btn-special-assignment-action btn btn-secondary btn-sm" @click="addSignal" data-cy="events-save">
+          {{ $t('Save') }}
         </button>
       </div>
     </div>
     <div v-if="showEditSignal" class="card">
       <div class="card-body p-2">
-        <form-input :label="$t('Name')" v-model="signalName" :error="getValidationErrorForNameUpdate(signalName)" />
+        <form-input :label="$t('Name')" v-model="signalName" :error="getValidationErrorForNameUpdate(signalName)" data-cy="events-edit-name" />
       </div>
       <div class="card-footer text-right p-2">
-        <button type="button" class="btn-special-assignment-action btn-special-assignment-close btn btn-outline-secondary btn-sm" @click="cancelAddSignal">
-          Cancel
+        <button type="button" class="btn-special-assignment-action btn-special-assignment-close btn btn-outline-secondary btn-sm" @click="cancelAddSignal" data-cy="events-cancel">
+          {{ $t('Cancel') }}
         </button>
-        <button :disabled="!validUpdate" type="button" class="btn-special-assignment-action btn btn-secondary btn-sm" @click="updateSignal">
-          Save
+        <button :disabled="!validUpdate" type="button" class="btn-special-assignment-action btn btn-secondary btn-sm" @click="updateSignal" data-cy="events-save">
+          {{ $t('Save') }}
         </button>
       </div>
     </div>
@@ -67,11 +74,11 @@
         ({{ deleteSignal.id }}) {{ deleteSignal.name }}
       </div>
       <div class="card-footer text-right p-2">
-        <button type="button" class="btn btn-sm btn-light mr-2 p-1 font-xs" @click="showConfirmDelete=false">
-          Cancel
+        <button type="button" class="btn btn-sm btn-light mr-2 p-1 font-xs" @click="showConfirmDelete=false" data-cy="events-cancel">
+          {{ $t('Cancel') }}
         </button>
-        <button v-if="!deleteSignalUsage(deleteSignal.id)" type="button" class="btn btn-sm btn-danger p-1 font-xs" @click="confirmDeleteSignal">
-          Delete
+        <button v-if="!deleteSignalUsage(deleteSignal.id)" type="button" class="btn btn-sm btn-danger p-1 font-xs" @click="confirmDeleteSignal" data-cy="events-delete">
+          {{ $t('Save') }}
         </button>
       </div>
     </div>
@@ -80,8 +87,8 @@
         <thead>
           <tr>
             <td colspan="2" align="right">
-              <button type="button" class="btn btn-secondary btn-sm p-1 font-xs" @click="showAddSignal">
-                <i class="fa fa-plus" /> Signal
+              <button type="button" class="btn btn-secondary btn-sm p-1 font-xs" @click="showAddSignal" data-cy="events-add">
+                <i class="fa fa-plus" /> {{ $t('Signal') }}
               </button>
             </td>
           </tr>
@@ -93,8 +100,8 @@
               {{ signal.name }}
             </td>
             <td align="right">
-              <button class="btn-link ml-2" @click="editSignal(signal)"><i class="fa fa-pen" /></button>
-              <button class="btn-link ml-2" @click="removeSignal(signal)"><i class="fa fa-trash" /></button>
+              <button class="btn-link ml-2" @click="editSignal(signal)" v-if="can('edit-signals')"><i class="fa fa-pen" data-cy="events-edit" /></button>
+              <button class="btn-link ml-2" @click="removeSignal(signal)" v-if="can('delete-signals')"><i class="fa fa-trash" data-cy="events-remove" /></button>
             </td>
           </tr>
         </tbody>
@@ -106,15 +113,22 @@
 <script>
 import store from '@/store';
 import Multiselect from 'vue-multiselect';
-import {get,uniqBy} from 'lodash';
+import { get,uniqBy } from 'lodash';
 
 export default {
   components: { Multiselect },
   props: {
     value: null,
     name: String,
-    placeholder: String,
+    placeholder: {
+      type: String,
+      default: 'Select option',
+    },
     helper: String,
+    canEdit: {
+      type: Boolean,
+      default: true,
+    },
     trackBy: {
       type: String,
       default: 'id',
@@ -133,6 +147,9 @@ export default {
     },
   },
   computed: {
+    invalid() {
+      return !this.value;
+    },
     localSignals() {
       return store.getters.rootElements
         .filter(element => element.$type === 'bpmn:Signal');
@@ -236,6 +253,10 @@ export default {
       this.deleteSignal = signal;
     },
     toggleConfigSignal() {
+      if (!this.can('view-signals')) {
+        window.ProcessMaker.alert(this.$t('You do not have permission to view signals'), 'danger');
+        return;
+      }
       this.showListSignals = !this.showListSignals;
     },
     editSignal(signal) {
@@ -277,6 +298,10 @@ export default {
       });
     },
     showAddSignal() {
+      if (!this.can('create-signals')) {
+        window.ProcessMaker.alert(this.$t('You do not have permission to add new signals'), 'danger');
+        return;
+      }
       this.showNewSignal = true;
       this.signalId = '';
       this.signalName = '';
@@ -298,9 +323,11 @@ export default {
       this.showNewSignal = false;
     },
     updateOptions(globalSignals) {
-      this.options = uniqBy([...this.localSignals, ...globalSignals], 'id');
+      this.options = uniqBy([ ...globalSignals, ...this.localSignals], 'id');
     },
     loadOptions(filter) {
+      if (!this.can('view-signals')) { return; }
+
       const pmql = this.pmql;
       window.window.ProcessMaker.apiClient
         .get(this.api, { params: { filter, pmql } })
@@ -321,13 +348,16 @@ export default {
       }
     },
     loadOptionsDebounced() {},
+    can(permission) {
+      return get(window, `ProcessMaker.modeler.signalPermissions.${permission}`, false);
+    },
   },
   watch: {
     value: {
       immediate: true,
       handler(value) {
         this.selectedOption = this.options.find(option => get(option, this.trackBy) == value);
-          
+
         if (value && !this.selectedOption) {
           this.loadSelected(value);
         }
@@ -345,5 +375,11 @@ export default {
     border-style: none !important;
     background: transparent;
     padding: 0px
+  }
+</style>
+
+<style>
+  .invalid .multiselect__tags {
+    border-color:#dc3545!important
   }
 </style>

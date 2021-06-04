@@ -1,6 +1,7 @@
 import {
   assertBoundaryEventIsCloseToTask,
   assertDownloadedXmlContainsExpected,
+  assertDownloadedXmlContainsSubstringNTimes,
   assertDownloadedXmlDoesNotContainExpected,
   connectNodesWithFlow,
   dragFromSourceToDest,
@@ -11,6 +12,7 @@ import {
   moveElement,
   moveElementRelativeTo,
   removeIndentationAndLinebreaks,
+  removeStartEvent,
   setBoundaryEvent,
   typeIntoTextInput,
   waitToRenderAllShapes,
@@ -119,7 +121,7 @@ describe('Pools', () => {
 
     const poolPosition = { x: 300, y: 300 };
     dragFromSourceToDest(nodeTypes.pool, poolPosition);
-    connectNodesWithFlow('sequence-flow-button', startEventPosition, taskPosition);
+    connectNodesWithFlow('generic-flow-button', startEventPosition, taskPosition);
 
     getElementAtPosition(poolPosition)
       .click()
@@ -127,7 +129,7 @@ describe('Pools', () => {
         getCrownButtonForElement($pool, 'delete-button').click({ force: true });
       });
 
-    const sequenceFlowReference = '<bpmn:sequenceFlow id="node_3" name="Sequence Flow" sourceRef="node_1" targetRef="node_2" />';
+    const sequenceFlowReference = '<bpmn:sequenceFlow id="node_4" name="Sequence Flow" sourceRef="node_1" targetRef="node_2" />';
 
     cy.get('[data-test=downloadXMLBtn]').click();
     cy.window()
@@ -148,7 +150,7 @@ describe('Pools', () => {
         getCrownButtonForElement($pool, 'lane-below-button').click({ force: true });
       });
 
-    const nonEmptyLane = '<bpmn:lane id="node_3" name=""><bpmn:flowNodeRef>node_1</bpmn:flowNodeRef></bpmn:lane>';
+    const nonEmptyLane = '<bpmn:lane id="node_4" name=""><bpmn:flowNodeRef>node_1</bpmn:flowNodeRef></bpmn:lane>';
     assertDownloadedXmlContainsExpected(nonEmptyLane);
 
     const startEventPosition = { x: 150, y: 150 };
@@ -158,7 +160,7 @@ describe('Pools', () => {
         getCrownButtonForElement($startEvent, 'delete-button').click();
       });
 
-    const emptyLane = '<bpmn:lane id="node_3" name="" />';
+    const emptyLane = '<bpmn:lane id="node_4" name="" />';
     assertDownloadedXmlContainsExpected(emptyLane);
     assertDownloadedXmlDoesNotContainExpected('node_1');
   });
@@ -270,5 +272,93 @@ describe('Pools', () => {
         .then(waitToRenderAllShapes)
         .then(assertBoundaryEventIsCloseToTask);
     });
+  });
+
+  it('Check LaneSet IDs', () => {
+    const poolPosition1 = { x: 300, y: 150 };
+    const poolPosition2 = { x: 300, y: 400 };
+
+    // Add pool
+    dragFromSourceToDest(nodeTypes.pool, poolPosition1);
+
+    getElementAtPosition(poolPosition1).click().then($pool => {
+      getCrownButtonForElement($pool, 'lane-below-button').click({ force: true });
+    });
+
+    dragFromSourceToDest(nodeTypes.pool, poolPosition2);
+
+    getElementAtPosition({ x: 600, y: 600 }).click().then($pool => {
+      getCrownButtonForElement($pool, 'lane-below-button').click({ force: true });
+    });
+
+    const laneSet1IdBpmn = `
+      <bpmn:laneSet id="node_3">
+        <bpmn:lane id="node_4" name="">
+          <bpmn:flowNodeRef>node_1</bpmn:flowNodeRef>
+        </bpmn:lane>
+        <bpmn:lane id="node_5" name="" />
+      </bpmn:laneSet>
+    `;
+    const laneSet2IdBpmn = `
+      <bpmn:laneSet id="node_7">
+        <bpmn:lane id="node_8" name="" />
+        <bpmn:lane id="node_9" name="" />
+      </bpmn:laneSet>
+    `;
+    assertDownloadedXmlContainsExpected(laneSet1IdBpmn);
+    assertDownloadedXmlContainsExpected(laneSet2IdBpmn);
+  });
+
+  it('does not duplicate boundary events when added to a task in a pool', () => {
+    const poolPosition1 = { x: 300, y: 150 };
+    const poolPosition2 = { x: 300, y: 400 };
+    const taskPosition = { x: 350, y: 450 };
+
+    dragFromSourceToDest(nodeTypes.pool, poolPosition1);
+    dragFromSourceToDest(nodeTypes.pool, poolPosition2);
+    dragFromSourceToDest(nodeTypes.task, taskPosition);
+    setBoundaryEvent(nodeTypes.boundaryConditionalEvent, taskPosition);
+
+    assertDownloadedXmlContainsSubstringNTimes('<bpmn:boundaryEvent', 1);
+  });
+
+  describe('does not add flow node references to pool lanes for excluded items', () => {
+
+    const poolPosition = {x: 100, y: 50};
+
+    function addLaneBelow() {
+      getElementAtPosition({x: poolPosition.x + 100, y: poolPosition.y + 100}, nodeTypes.pool)
+        .click({force: true})
+        .then($pool => {
+          getCrownButtonForElement($pool, 'lane-below-button').click({force: true});
+        });
+    }
+
+    function addElementsThatShouldNotHaveFlowNodeRefs() {
+      dragFromSourceToDest(nodeTypes.dataStore, {x: poolPosition.x + 100, y: poolPosition.y + 100});
+      dragFromSourceToDest(nodeTypes.dataObject, {x: poolPosition.x + 150, y: poolPosition.y + 150});
+      dragFromSourceToDest(nodeTypes.textAnnotation, {x: poolPosition.x + 200, y: poolPosition.y + 200});
+    }
+
+    it('when adding elements to an existing lane', () => {
+      removeStartEvent();
+      dragFromSourceToDest(nodeTypes.pool, poolPosition);
+
+      addLaneBelow();
+      addElementsThatShouldNotHaveFlowNodeRefs();
+
+      assertDownloadedXmlDoesNotContainExpected('<bpmn:flowNodeRef');
+    });
+
+    it('when adding elements to a pool and then adding a lane', () => {
+      removeStartEvent();
+      dragFromSourceToDest(nodeTypes.pool, poolPosition);
+
+      addElementsThatShouldNotHaveFlowNodeRefs();
+      addLaneBelow();
+
+      assertDownloadedXmlDoesNotContainExpected('<bpmn:flowNodeRef');
+    });
+
   });
 });

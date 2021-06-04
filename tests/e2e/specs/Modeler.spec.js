@@ -1,20 +1,17 @@
 import {
   addNodeTypeToPaper,
-  assertDownloadedXmlContainsExpected,
-  assertDownloadedXmlDoesNotContainExpected,
+  assertDownloadedXmlContainsSubstringNTimes,
   connectNodesWithFlow,
   dragFromSourceToDest,
   getCrownButtonForElement,
   getElementAtPosition,
   getGraphElements,
   getLinksConnectedToElement,
-  getXml,
   isElementCovered,
   removeIndentationAndLinebreaks,
   typeIntoTextInput,
   uploadXml,
   waitToRenderAllShapes,
-  waitToRenderNodeUpdates,
 } from '../support/utils';
 
 import { nodeTypes } from '../support/constants';
@@ -31,19 +28,19 @@ describe('Modeler', () => {
     dragFromSourceToDest(nodeTypes.task, taskPosition);
 
     const startEventPosition = { x: 150, y: 150 };
-    connectNodesWithFlow('sequence-flow-button', startEventPosition, taskPosition);
+    connectNodesWithFlow('generic-flow-button', startEventPosition, taskPosition);
 
     const task2Position = { x: 300, y: 350 };
     dragFromSourceToDest(nodeTypes.task, task2Position);
-    connectNodesWithFlow('sequence-flow-button', taskPosition, task2Position);
+    connectNodesWithFlow('generic-flow-button', taskPosition, task2Position);
 
     const task3Position = { x: 100, y: 350 };
     dragFromSourceToDest(nodeTypes.task, task3Position);
-    connectNodesWithFlow('sequence-flow-button', task2Position, task3Position);
+    connectNodesWithFlow('generic-flow-button', task2Position, task3Position);
 
     const endEventPosition = { x: 100, y: 500 };
     dragFromSourceToDest(nodeTypes.endEvent, endEventPosition);
-    connectNodesWithFlow('sequence-flow-button', task3Position, endEventPosition);
+    connectNodesWithFlow('generic-flow-button', task3Position, endEventPosition);
 
     dragFromSourceToDest(nodeTypes.pool, { x: 100, y: 100 });
 
@@ -93,7 +90,7 @@ describe('Modeler', () => {
     const taskPosition = { x: 400, y: 300 };
     dragFromSourceToDest(nodeTypes.task, taskPosition);
 
-    connectNodesWithFlow('sequence-flow-button', taskPosition, taskPosition);
+    connectNodesWithFlow('generic-flow-button', taskPosition, taskPosition);
 
     const numberOfNewElementsAdded = 1;
     getGraphElements().should('have.length', initialNumberOfElements + numberOfNewElementsAdded);
@@ -136,41 +133,13 @@ describe('Modeler', () => {
     cy.get('[name=id]').should('have.value', 'node_1');
   });
 
-  it('Validates gateway direction', () => {
-    const gatewayPosition = { x: 250, y: 250 };
-    dragFromSourceToDest(nodeTypes.exclusiveGateway, gatewayPosition);
-    cy.get('[data-test=switch-to-inclusive-gateway]').click();
-
-    cy.get('[data-test="validation-toggle"]').click({ force: true });
-    cy.get('[data-test="validation-list-toggle"]').click();
-
-    cy.get('[data-test=validation-list]').should($lsit => {
-      expect($lsit).to.contain('Gateway must have multiple outgoing Sequence Flows');
-    });
-
-    cy.get('[data-test=validation-list-toggle]').click();
-
-    getElementAtPosition(gatewayPosition).click();
-
-    cy.contains('Advanced').click();
-    cy.get('[name=gatewayDirection]').select('Converging');
-
-    waitToRenderNodeUpdates();
-
-    cy.get('[data-test=validation-list-toggle]').click();
-
-    cy.get('[data-test=validation-list]').should($lsit => {
-      expect($lsit).to.contain('Gateway must have multiple incoming Sequence Flows');
-    });
-  });
-
   it('Adding a pool and lanes does not overlap sequence flow', () => {
     const startEventPosition = { x: 150, y: 150 };
     const taskPosition = { x: 250, y: 250 };
 
     dragFromSourceToDest(nodeTypes.task, taskPosition);
 
-    connectNodesWithFlow('sequence-flow-button', startEventPosition, taskPosition);
+    connectNodesWithFlow('generic-flow-button', startEventPosition, taskPosition);
 
     const poolPosition = { x: 150, y: 300 };
     dragFromSourceToDest(nodeTypes.pool, poolPosition);
@@ -239,60 +208,12 @@ describe('Modeler', () => {
     const validId = 'Process_1';
     typeIntoTextInput('[name=id]', validId);
 
-    cy.get('.invalid-feedback').should('not.have.value', 'The Node Identifier format is invalid.');
-  });
-
-  it('updates validation after undo/redo', () => {
-    cy.get('[data-test=validation-toggle]').click({ force: true });
-    cy.get('[data-test=validation-list-toggle]').click();
-
-    const initialNumberOfDefinitionListElements = 4;
-    cy.get('[data-test=validation-list]').children().should('have.length', initialNumberOfDefinitionListElements);
-
-    const startEventPosition = { x: 150, y: 150 };
-
-    getElementAtPosition(startEventPosition).then($startEvent => {
-      cy.wrap($startEvent).find('[stroke=red]').should('exist');
-    });
-
-    const taskPosition = { x: 150, y: 300 };
-    dragFromSourceToDest(nodeTypes.task, taskPosition);
-
-    const numberOfNewDefinitionListElements = 2;
-    cy.get('[data-test=validation-list]').children()
-      .should('have.length', initialNumberOfDefinitionListElements + numberOfNewDefinitionListElements)
-      .should('contain', 'node_2');
-
-    cy.get('[data-test=undo]').click();
-    waitToRenderAllShapes();
-
-    getElementAtPosition(startEventPosition).then($startEvent => {
-      cy.wrap($startEvent).find('[stroke=red]').should('exist');
-    });
-
-    cy.get('[data-test=validation-list]').children()
-      .should('have.length', initialNumberOfDefinitionListElements)
-      .should('not.contain', 'node_2');
-
-    cy.get('[data-test=redo]').click();
-    waitToRenderAllShapes();
-
-    cy.get('[data-test=validation-list]').children()
-      .should('have.length', initialNumberOfDefinitionListElements + numberOfNewDefinitionListElements)
-      .should('contain', 'node_2');
-
-    getElementAtPosition(startEventPosition).then($startEvent => {
-      cy.wrap($startEvent).find('[stroke=red]').should('exist');
-    });
-
-    getElementAtPosition(taskPosition).then($task => {
-      cy.wrap($task).find('[stroke=red]').should('exist');
-    });
+    cy.get('.invalid-feedback').should('not.exist');
   });
 
   it('shows warning for unknown element during parsing', () => {
     uploadXml('unknownElement.xml');
-    const warning = 'DataStoreReference is an unsupported element type in parse';
+    const warning = 'bpmn:Group is an unsupported element type in parse';
 
     cy.get('[data-test="validation-toggle"]').click({ force: true });
     cy.get('[data-test="validation-list-toggle"]').click({ force: true });
@@ -314,7 +235,7 @@ describe('Modeler', () => {
     const taskPosition = { x: 300, y: 300 };
 
     dragFromSourceToDest(nodeTypes.task, taskPosition);
-    connectNodesWithFlow('sequence-flow-button', startEventPosition, taskPosition);
+    connectNodesWithFlow('generic-flow-button', startEventPosition, taskPosition);
 
     getElementAtPosition(startEventPosition)
       .then(getLinksConnectedToElement)
@@ -464,10 +385,8 @@ describe('Modeler', () => {
   it('should not generate duplicate diagram IDs', () => {
     uploadXml('setUpForDuplicateDiagramId.xml');
     dragFromSourceToDest(nodeTypes.task, { x: 300, y: 300 });
-    getXml().then(xml => {
-      expect(xml.match(/node_1_di/g)).to.have.length(1);
-      expect(xml.match(/node_2_di/g)).to.have.length(1);
-    });
+    assertDownloadedXmlContainsSubstringNTimes('node_1_di',1,'Node 1 should occur once');
+    assertDownloadedXmlContainsSubstringNTimes('node_2_di',1,'Node 2 should occur once');
   });
 
   it('should only show dropdown for the start event', () => {
@@ -505,70 +424,6 @@ describe('Modeler', () => {
     });
   });
 
-  it('Does not display a console error on multiple validation errors for one node', () => {
-    cy.window().then((win) => {
-      cy.spy(win.console, 'error');
-    });
-
-    const taskPosition1 = { x: 300, y: 250 };
-    const taskPosition2 = { x: 300, y: 350 };
-    const taskPosition3 = { x: 300, y: 450 };
-    const parallelGatewayPosition = { x: 200, y: 200 };
-
-    addNodeTypeToPaper(parallelGatewayPosition, nodeTypes.exclusiveGateway, 'switch-to-parallel-gateway');
-    dragFromSourceToDest(nodeTypes.task, taskPosition1);
-    dragFromSourceToDest(nodeTypes.task, taskPosition2);
-    dragFromSourceToDest(nodeTypes.task, taskPosition3);
-
-    connectNodesWithFlow('sequence-flow-button', taskPosition1, parallelGatewayPosition);
-    connectNodesWithFlow('sequence-flow-button', taskPosition2, parallelGatewayPosition);
-    connectNodesWithFlow('sequence-flow-button', parallelGatewayPosition, taskPosition3);
-
-    cy.get('[data-test="validation-toggle"]').click({ force: true });
-    cy.get('[data-test="validation-list-toggle"]').click();
-
-    cy.get('[data-test=validation-list]')
-      .should('contain.text', 'Gateway must have multiple outgoing Sequence Flows.Node ID: node_3');
-    cy.get('[data-test=validation-list]')
-      .should('contain.text', 'Gateway must not have multiple incoming Sequence Flows.Node ID: node_3');
-
-    cy.window().then((win) => {
-      expect(win.console.error).to.have.callCount(0);
-    });
-  });
-
-  it('should add and remove documentation to element', () => {
-    const position = { x: 300, y: 300 };
-    const baseElements = [
-      nodeTypes.startEvent,
-      nodeTypes.intermediateCatchEvent,
-      nodeTypes.endEvent,
-      nodeTypes.task,
-      nodeTypes.exclusiveGateway,
-      nodeTypes.pool,
-      nodeTypes.textAnnotation,
-    ];
-
-    baseElements
-      .forEach(type => {
-        const docString = `${type} doc!`;
-
-        dragFromSourceToDest(type, position);
-        cy.contains('Advanced').click();
-        cy.get('[name="documentation"]').clear().type(docString);
-        assertDownloadedXmlContainsExpected(docString);
-
-        cy.get('[name="documentation"]').clear();
-        assertDownloadedXmlDoesNotContainExpected('bpmn:documentation');
-
-        getElementAtPosition(position, type)
-          .click({ force: true })
-          .then($element => {
-            getCrownButtonForElement($element, 'delete-button').click({ force: true });
-          });
-      });
-  });
-
   it('after collapsing panels, show inspector panel when element is highlighted', () => {
     cy.get('[data-test="panels-btn"]').click();
     cy.get('[data-test="inspector-container"]').should('not.be.visible');
@@ -588,7 +443,7 @@ describe('Modeler', () => {
     getElementAtPosition(startEventPosition).click();
     cy.get('.crown-config').should('exist');
 
-    cy.get('#sequence-flow-button').click();
+    cy.get('#generic-flow-button').click();
     cy.get('.crown-config').should('not.exist');
   });
 });

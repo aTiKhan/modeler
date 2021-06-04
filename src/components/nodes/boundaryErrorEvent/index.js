@@ -2,6 +2,8 @@ import component from './boundaryErrorEvent.vue';
 import boundaryEventConfig from '../boundaryEvent';
 import merge from 'lodash/merge';
 import cloneDeep from 'lodash/cloneDeep';
+import advancedAccordionConfig from '@/components/inspectors/advancedAccordionConfig';
+import documentationAccordionConfig from '@/components/inspectors/documentationAccordionConfig';
 
 export const id = 'processmaker-modeler-boundary-error-event';
 
@@ -19,4 +21,17 @@ export default merge(cloneDeep(boundaryEventConfig), {
       ],
     });
   },
+  inspectorConfig: [
+    {
+      items: [
+        {
+          items: [
+            {},
+          ],
+        },
+        documentationAccordionConfig,
+        advancedAccordionConfig,
+      ],
+    },
+  ],
 });

@@ -1,5 +1,6 @@
 import component from './eventBasedGateway.vue';
 import advancedAccordionConfig from '@/components/inspectors/advancedAccordionConfig';
+import documentationAccordionConfig from '@/components/inspectors/documentationAccordionConfig';
 import defaultNames from '@/components/nodes/gateway/defaultNames';
 
 const id = 'processmaker-modeler-event-based-gateway';
@@ -35,7 +36,7 @@ export default {
             initiallyOpen: true,
             label: 'Configuration',
             icon: 'cog',
-            name: 'inspector-accordion',
+            name: 'inspector-accordion-event-based-gateway',
           },
           items: [
             {
@@ -48,6 +49,7 @@ export default {
             },
           ],
         },
+        documentationAccordionConfig,
         advancedAccordionConfig,
       ],
     },

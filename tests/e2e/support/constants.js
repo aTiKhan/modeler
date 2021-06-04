@@ -13,6 +13,8 @@ export const defaultViewportDimensions = {
  * same as the shape type.
  */
 export const nodeTypes = {
+  dataObject: 'processmaker-modeler-data-object',
+  dataStore: 'processmaker-modeler-data-store',
   startEvent: 'processmaker-modeler-start-event',
   messageStartEvent: 'processmaker-modeler-message-start-event',
   task: 'processmaker-modeler-task',
@@ -37,6 +39,7 @@ export const nodeTypes = {
   boundaryErrorEvent: 'processmaker-modeler-boundary-error-event',
   boundaryTimerEvent: 'processmaker-modeler-boundary-timer-event',
   boundarySignalEvent: 'processmaker-modeler-boundary-signal-event',
+  boundaryConditionalEvent: 'processmaker-modeler-boundary-conditional-event',
   boundaryEscalationEvent: 'processmaker-modeler-boundary-escalation-event',
   taskWithMarker: 'processmaker-custom-marker-task-test',
   boundaryMessageEvent: 'processmaker-modeler-boundary-message-event',

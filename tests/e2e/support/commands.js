@@ -80,3 +80,10 @@ Cypress.Commands.add('getType', {
     .invoke('getModelById', element.attr('model-id'))
     .then(shape => shape.component.node.type);
 });
+
+Cypress.Commands.add('selectOption', { prevSubject: true }, (subject, option) => {
+  cy.get(subject).click();
+  cy.get(subject).find('input').clear().type(option);
+  cy.get(subject).find(`span:not(.multiselect__option--disabled) span:contains("${option}"):first`).click();
+  cy.wait(300);
+});

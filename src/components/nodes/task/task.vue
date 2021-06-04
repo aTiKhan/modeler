@@ -13,6 +13,10 @@
     :is-rendering="isRendering"
     :boundary-event-dropdown-data="boundaryEventDropdownData"
     :dropdown-data="dropdownData"
+    :showCustomIconPicker="true"
+    :iconName="this.iconName"
+    @set-custom-icon-name="setCustomIconName"
+    @reset-custom-icon-name="resetCustomIconName"
     v-on="$listeners"
   />
 </template>
@@ -25,12 +29,14 @@ import hasMarkers, { markerSize } from '@/mixins/hasMarkers';
 import TaskShape from '@/components/nodes/task/shape';
 import { taskHeight } from './taskConfig';
 import hideLabelOnDrag from '@/mixins/hideLabelOnDrag';
+import customIcon from '@/mixins/customIcon';
 import CrownConfig from '@/components/crown/crownConfig/crownConfig';
 import { gridSize } from '@/graph';
-import sequentialIcon from '@/assets/sequential.svg';
-import parallelIcon from '@/assets/parallel.svg';
 import defaultNames from '@/components/nodes/task/defaultNames';
 import boundaryEventDropdownData from '@/components/nodes/boundaryEvent/boundaryEventDropdownData';
+import setupLoopCharacteristicsMarkers from '@/components/nodes/task/setupMultiInstanceMarkers';
+import setupCompensationMarker from '@/components/nodes/task/setupCompensationMarker';
+import { getRectangleAnchorPoint } from '@/portsUtils';
 
 const labelPadding = 15;
 const topAndBottomMarkersSpace = 2 * markerSize;
@@ -52,7 +58,7 @@ export default {
     'planeElements',
     'isRendering',
   ],
-  mixins: [highlightConfig, portsConfig, hasMarkers, hideLabelOnDrag],
+  mixins: [highlightConfig, portsConfig, hasMarkers, hideLabelOnDrag, customIcon],
   data() {
     return {
       shape: null,
@@ -80,6 +86,7 @@ export default {
         },
       ],
       boundaryEventDropdownData,
+      anchorPointFunction: getRectangleAnchorPoint,
     };
   },
   computed: {
@@ -100,6 +107,15 @@ export default {
         this.shape.resize(width, newHeight);
         this.recalcMarkersAlignment();
       }
+    },
+    'node.definition.isForCompensation'() {
+      setupCompensationMarker(this.node.definition, this.markers, this.$set, this.$delete);
+    },
+    'node.definition': {
+      deep: true,
+      handler() {
+        setupLoopCharacteristicsMarkers(this.node.definition, this.markers, this.$set, this.$delete);
+      },
     },
   },
   methods: {
@@ -125,23 +141,14 @@ export default {
     middleIsOddNumber(value) {
       return Math.abs((value / 2) % 2) === 1;
     },
-    setupMultiInstanceMarker() {
-      const loopCharacteristics = this.node.definition.get('loopCharacteristics');
-      const isMultiInstance = loopCharacteristics ?
-        loopCharacteristics.$type === 'bpmn:MultiInstanceLoopCharacteristics' :
-        false;
-      const isSequential = isMultiInstance ? loopCharacteristics.isSequential : false;
-      if (isMultiInstance) {
-        this.$set(this.markers.bottomCenter, 'multiInstance', isSequential ? sequentialIcon : parallelIcon);
-      }
-    },
   },
   mounted() {
     this.shape = new TaskShape();
     let bounds = this.node.diagram.bounds;
     this.shape.position(bounds.x, bounds.y);
     this.shape.resize(bounds.width, bounds.height);
-    this.setupMultiInstanceMarker();
+    setupCompensationMarker(this.node.definition, this.markers, this.$set, this.$delete);
+    setupLoopCharacteristicsMarkers(this.node.definition, this.markers, this.$set, this.$delete);
     this.shape.attr({
       body: {
         rx: 8,

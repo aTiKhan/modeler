@@ -1,8 +1,9 @@
 import component from './pool';
 import nameConfigSettings from '@/components/inspectors/nameConfigSettings';
 import advancedAccordionConfig from '@/components/inspectors/advancedAccordionConfig';
+import documentationAccordionConfig from '@/components/inspectors/documentationAccordionConfig';
+import { id } from './config';
 
-export const id = 'processmaker-modeler-pool';
 
 export default {
   id,
@@ -12,6 +13,7 @@ export default {
   category: 'BPMN',
   icon: require('@/assets/toolpanel/pool.svg'),
   label: 'Pool',
+  rank: 60,
   definition(moddle, $t) {
     return moddle.create('bpmn:Participant', {
       name: $t('Pool'),
@@ -36,7 +38,7 @@ export default {
             initiallyOpen: true,
             label: 'Configuration',
             icon: 'cog',
-            name: 'inspector-accordion',
+            name: 'inspector-accordion-pool',
           },
           items: [
             {
@@ -45,6 +47,7 @@ export default {
             },
           ],
         },
+        documentationAccordionConfig,
         advancedAccordionConfig,
       ],
     },

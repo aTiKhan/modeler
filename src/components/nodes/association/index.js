@@ -16,7 +16,7 @@ export default {
   },
   inspectorConfig: [
     {
-      name: 'Association',
+      name: 'Data Association',
       items: [
         {
           component: 'FormAccordion',
@@ -25,7 +25,7 @@ export default {
             initiallyOpen: true,
             label: 'Configuration',
             icon: 'cog',
-            name: 'inspector-accordion',
+            name: 'inspector-accordion-association',
           },
           items: [
             {
